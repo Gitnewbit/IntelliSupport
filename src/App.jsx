@@ -1,3 +1,5 @@
+import React, { useState, useMemo, useRef, useEffect } from "react";
+
 import { fbAuth } from "./firebase";
 import { FS } from "./firestoreService";
 
@@ -295,20 +297,45 @@ export default function App() {
   const [sbOpen,setSb]         = useState(false);
 
   // Firebase Auth
-  useEffect(()=>{
-    return onAuthStateChanged(fbAuth, async au => {
-      setAuthUser(au);
-      if(au){
+useEffect(() => {
+  console.log("AUTH LISTENER STARTED");
+
+  const unsubscribe = onAuthStateChanged(fbAuth, async (au) => {
+    console.log("AUTH STATE CHANGED:", au);
+
+    setAuthUser(au);
+
+    if (au) {
+      try {
         const p = await FS.get("users", au.uid);
-        if(p){ setProfile(p); }
-        else {
-          const mgr = {id:au.uid,name:"Manager",role:ROLES.MANAGER,email:au.email,avatar:"MG",color:"#6c63ff",spec:"All-round",active:true,createdAt:nowISO()};
-          await FS.set("users",au.uid,mgr);
+        console.log("PROFILE FROM FIRESTORE:", p);
+
+        if (p) {
+          setProfile(p);
+        } else {
+          console.log("CREATING NEW PROFILE");
+
+          const mgr = {
+            id: au.uid,
+            name: "Manager",
+            role: "manager",
+            email: au.email,
+            createdAt: new Date().toISOString()
+          };
+
+          await FS.set("users", au.uid, mgr);
           setProfile(mgr);
         }
-      } else { setProfile(null); }
-    });
-  },[]);
+      } catch (err) {
+        console.error("FIRESTORE ERROR:", err);
+      }
+    } else {
+      setProfile(null);
+    }
+  });
+
+  return () => unsubscribe();
+}, []);
 
   // Firestore realtime listeners
   useEffect(()=>{
@@ -397,11 +424,18 @@ export default function App() {
     }catch(e){return{ok:false,error:e.message};}
   }
 
-  if (authUser === undefined) {
+if (authUser === undefined) {
   console.log("Auth still loading...");
   return <div style={{color:"white"}}>Loading auth...</div>;
 }
-  if(!authUser||!profile) return <LoginPage/>;
+
+if (!authUser) {
+  return <LoginPage />;
+}
+
+if (!profile) {
+  return <div style={{color:"white"}}>Loading profile...</div>;
+}
 
   const active=isTech?tickets.filter(t=>t.techId===profile.id&&!["Closed"].includes(t.status)).length:tickets.filter(t=>!["Closed"].includes(t.status)).length;
   const partsHold=tickets.filter(t=>t.status==="Parts Pending").length;
@@ -493,7 +527,23 @@ function Loading(){return<div style={{display:"flex",alignItems:"center",justify
 // ── LOGIN ─────────────────────────────────────────────────────
 function LoginPage(){
   const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [busy,setBusy]=useState(false);const [reset,setReset]=useState(false);const [sent,setSent]=useState(false);
-  async function login(e){e.preventDefault();setBusy(true);setErr("");try{await signInWithEmailAndPassword(fbAuth,email,pw);}catch(ex){setErr(ex.code==="auth/invalid-credential"||ex.code==="auth/wrong-password"?"Invalid email or password.":ex.message);}setBusy(false);}
+async function login(e){
+  e.preventDefault();
+  console.log("LOGIN CLICKED");
+
+  setBusy(true);
+  setErr("");
+
+  try{
+    const userCred = await signInWithEmailAndPassword(fbAuth,email,pw);
+    console.log("LOGIN SUCCESS:", userCred);
+  }catch(ex){
+    console.error("LOGIN ERROR:", ex);
+    setErr(ex.message);
+  }
+
+  setBusy(false);
+}
   async function doReset(){if(!email.trim()){setErr("Enter your email first.");return;}try{await sendPasswordResetEmail(fbAuth,email);setSent(true);setErr("");}catch(ex){setErr(ex.message);}}
   return(
     <div className="login-bg">

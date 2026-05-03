@@ -3,7 +3,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCsqmFDUpsi87Zf31jf0IgF9Q1iVFToX6AS",
+  apiKey: "AIzaSyCsqmFDUpsi87Zf31jf0IgF9Q1iVFToX6A",
   authDomain: "intellisupport-fab11.firebaseapp.com",
   projectId: "intellisupport-fab11",
   storageBucket: "intellisupport-fab11.appspot.com",

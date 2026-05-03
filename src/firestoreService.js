@@ -22,9 +22,9 @@ export const FS = {
   sub(col, callback) {
     const ref = collection(fbDb, col);
     return onSnapshot(ref, (snapshot) => {
-      const data = snapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data()
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
       }));
       callback(data);
     });
