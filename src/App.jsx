@@ -105,7 +105,8 @@ const injectCSS = () => {
     .np-msg{font-size:12px;line-height:1.4}
     .np-ts{font-size:10px;color:var(--mu);margin-top:2px;font-family:'JetBrains Mono',monospace}
     .sg{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:14px}
-    .sc{background:var(--s1);border:1px solid var(--rim);border-radius:10px;padding:12px 13px}
+    .sc{background:var(--s1);border:1px solid var(--rim);border-radius:10px;padding:12px 13px;cursor:pointer;transition:all .2s}
+    .sc:hover{border-color:var(--acc);background:var(--s2)}
     .sc-n{font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1}
     .sc-l{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-top:3px}
     .sc-s{font-size:11px;color:var(--mu2);margin-top:2px}
@@ -295,26 +296,23 @@ export default function App() {
   const [detail,setDetail]     = useState(null);
   const [notifOpen,setNotif]   = useState(false);
   const [sbOpen,setSb]         = useState(false);
+  const [dashboardFilter,setDashboardFilter] = useState(null);
+  const [partsDetailModal,setPartsDetailModal] = useState(null);
 
   // Firebase Auth
 useEffect(() => {
   console.log("AUTH LISTENER STARTED");
-
   const unsubscribe = onAuthStateChanged(fbAuth, async (au) => {
     console.log("AUTH STATE CHANGED:", au);
-
     setAuthUser(au);
-
     if (au) {
       try {
         const p = await FS.get("users", au.uid);
         console.log("PROFILE FROM FIRESTORE:", p);
-
         if (p) {
           setProfile(p);
         } else {
           console.log("CREATING NEW PROFILE");
-
           const mgr = {
             id: au.uid,
             name: "Manager",
@@ -322,7 +320,6 @@ useEffect(() => {
             email: au.email,
             createdAt: new Date().toISOString()
           };
-
           await FS.set("users", au.uid, mgr);
           setProfile(mgr);
         }
@@ -333,7 +330,6 @@ useEffect(() => {
       setProfile(null);
     }
   });
-
   return () => unsubscribe();
 }, []);
 
@@ -397,7 +393,7 @@ useEffect(() => {
       notifs.push({id:uid(),toId:data.techId,toRole:null,msg:`📋 New call: ${id} — "${data.title}" · ${cl?.name||"Walk-in"} · ${data.priority}`,read:false,ts:nowISO()});
     }
     if(isComeback) notifs.push({id:uid(),toRole:ROLES.MANAGER,toId:null,msg:`🔁 Comeback: ${id} — "${data.title}" (same serial ${deviceSerial} within ${days}d)`,read:false,ts:nowISO()});
-    const t={...data,id,isComeback,createdAt:nowISO(),updatedAt:nowISO(),resolvedAt:null,closedAt:null,
+    const t={...data,id,isComeback,createdAt:nowISO(),updatedAt:nowISO(),resolvedAt:null,closedAt:null,meterReading:null,distanceTravelled:null,
       status:data.techId&&data.status==="Open"?"Assigned":data.status,
       history:[{id:uid(),actorId:profile.id,action:"created",note:"Call logged"+(data.techId?` — assigned to ${users.find(u=>u.id===data.techId)?.name}`:""),ts:nowISO()}],
       notifs,parts:[]};
@@ -475,7 +471,7 @@ if (!profile) {
             </div>
           ))}
         </nav>
-        <div className="sb-foot"><span style={{fontSize:10,color:"var(--mu)"}}>v4.2</span><button className="logout-btn" onClick={()=>signOut(fbAuth)}>Sign out</button></div>
+        <div className="sb-foot"><span style={{fontSize:10,color:"var(--mu)"}}>v4.3</span><button className="logout-btn" onClick={()=>signOut(fbAuth)}>Sign out</button></div>
       </aside>
 
       <main className="main">
@@ -494,9 +490,9 @@ if (!profile) {
         <div className="content">
           {isTech&&page==="dashboard"&&<TechDash tickets={tickets} user={profile} settings={settings} onView={setDetail}/>}
           {isTech&&page==="tickets"&&<TicketList tickets={tickets} clients={clients} users={users} user={profile} isTech slaMeta={slaMeta} onView={setDetail}/>}
-          {!isTech&&page==="dashboard"&&<Dashboard tickets={tickets} clients={clients} devices={devices} users={users} slaMeta={slaMeta} settings={settings} onView={setDetail}/>}
+          {!isTech&&page==="dashboard"&&<Dashboard tickets={tickets} clients={clients} devices={devices} users={users} slaMeta={slaMeta} settings={settings} onView={setDetail} dashboardFilter={dashboardFilter} setDashboardFilter={setDashboardFilter}/>}
           {!isTech&&page==="tickets"&&<TicketList tickets={tickets} clients={clients} users={users} user={profile} isCtrl={isCtrl} slaMeta={slaMeta} onView={setDetail} onNew={()=>setModal("new-ticket")}/>}
-          {!isTech&&page==="parts"&&<PartsPage parts={parts} setParts={setParts} tickets={tickets} patchTicket={patchTicket} user={profile} isCtrl={isCtrl}/>}
+          {!isTech&&page==="parts"&&<PartsPage parts={parts} setParts={setParts} tickets={tickets} patchTicket={patchTicket} user={profile} isCtrl={isCtrl} onPartDetails={setPartsDetailModal}/>}
           {!isTech&&page==="yield"&&<YieldPage devices={devices} clients={clients} isCtrl={isCtrl} addDevEv={addDevEv} user={profile}/>}
           {!isTech&&page==="clients"&&<ClientsPage clients={clients} devices={devices} tickets={tickets} isCtrl={isCtrl} slaMeta={slaMeta}/>}
           {!isTech&&page==="devices"&&<DevicesPage devices={devices} clients={clients} tickets={tickets} isCtrl={isCtrl} addDevEv={addDevEv}/>}
@@ -517,6 +513,45 @@ if (!profile) {
 
       {detail&&<TicketDetail ticket={tickets.find(t=>t.id===detail.id)||detail} tickets={tickets} clients={clients} devices={devices} users={users} user={profile} isTech={isTech} isCtrl={isCtrl} isMgr={isMgr} slaMeta={slaMeta} settings={settings} onClose={()=>setDetail(null)} patchTicket={patchTicket} addDevEv={addDevEv}/>}
       {modal==="new-ticket"&&<NewTicketModal clients={clients} devices={devices} users={users} user={profile} onClose={()=>setModal(null)} onSave={async d=>{await createTicket(d);setModal(null);}}/>}
+      {partsDetailModal&&<PartsDetailModal part={partsDetailModal} tickets={tickets} patchTicket={patchTicket} isCtrl={isCtrl} onClose={()=>setPartsDetailModal(null)} onMarkArrived={async(ticketId,partId)=>{const t=tickets.find(x=>x.id===ticketId);if(!t)return;const updated=(t.parts||[]).map(p=>p.id===partId?{...p,status:"Arrived",arrived:nowISO()}:p);await patchTicket(ticketId,{parts:updated},{action:"part_arrived",note:`Part arrived: ${partsDetailModal.name}`},{toRole:ROLES.CONTROLLER,toId:null,msg:`📬 Part arrived for ${ticketId}: ${partsDetailModal.name}`});setPartsDetailModal(null);}}/>}
+    </div>
+  );
+}
+
+// ── PARTS DETAIL MODAL ────────────────────────────────────────
+function PartsDetailModal({part,tickets,patchTicket,isCtrl,onClose,onMarkArrived}){
+  const relatedTickets = tickets.filter(t=>(t.parts||[]).some(p=>p.id===part.id));
+  return(
+    <div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal sm">
+        <div className="mhdr"><div><div className="mhdr-t">📦 {part.name}</div><div className="mhdr-s">Part Details</div></div><XBtn onClick={onClose}/></div>
+        <div className="mbody">
+          <div className="dg2">
+            <div className="di"><div className="dil">Part Name</div><div className="div2">{part.name}</div></div>
+            <div className="di"><div className="dil">P/N</div><div className="div2 mono">{part.partNo||"—"}</div></div>
+            <div className="di"><div className="dil">Qty</div><div className="div2">{part.qty}</div></div>
+            <div className="di"><div className="dil">Cost</div><div className="div2">{fmtR(part.unitCost)}</div></div>
+          </div>
+          <div className="di" style={{marginBottom:12}}><div className="dil">Status</div><span className="bdg" style={{background:part.status==="Fitted"?"rgba(46,204,138,.12)":"rgba(251,146,60,.12)",color:part.status==="Fitted"?"var(--grn)":"var(--amb)"}}>{part.status}</span></div>
+          <div style={{fontSize:12,color:"var(--mu2)"}}>
+            {part.ordered&&<div>Ordered: {fmtD(part.ordered)}</div>}
+            {part.fitted&&<div>Fitted: {fmtD(part.fitted)}</div>}
+            {part.pagesBefore&&<div>Pages Before: {Number(part.pagesBefore).toLocaleString()}</div>}
+          </div>
+          <div className="sect" style={{marginTop:12}}>On Tickets<span/></div>
+          {relatedTickets.length===0?<div style={{fontSize:12,color:"var(--mu)",textAlign:"center",padding:"20px"}}>Not used on any ticket</div>
+            :relatedTickets.map(t=>(
+              <div key={t.id} style={{background:"var(--s2)",border:"1px solid var(--rim)",borderRadius:8,padding:10,marginBottom:8}}>
+                <div style={{fontWeight:600,fontSize:12,marginBottom:4}}>{t.id}</div>
+                <div style={{fontSize:11,color:"var(--mu2)",marginBottom:6}}>{t.title}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span className="bdg" style={{background:t.status==="Fitted"?"rgba(46,204,138,.12)":"rgba(251,146,60,.12)",color:t.status==="Fitted"?"var(--grn)":"var(--amb)"}}>{t.status}</span>
+                  {isCtrl&&t.status!=="Fitted"&&<button className="btn bgrn bxs" onClick={()=>onMarkArrived(t.id,part.id)}>Mark Arrived</button>}
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -530,10 +565,8 @@ function LoginPage(){
 async function login(e){
   e.preventDefault();
   console.log("LOGIN CLICKED");
-
   setBusy(true);
   setErr("");
-
   try{
     const userCred = await signInWithEmailAndPassword(fbAuth,email,pw);
     console.log("LOGIN SUCCESS:", userCred);
@@ -541,7 +574,6 @@ async function login(e){
     console.error("LOGIN ERROR:", ex);
     setErr(ex.message);
   }
-
   setBusy(false);
 }
   async function doReset(){if(!email.trim()){setErr("Enter your email first.");return;}try{await sendPasswordResetEmail(fbAuth,email);setSent(true);setErr("");}catch(ex){setErr(ex.message);}}
@@ -622,8 +654,10 @@ function TechDash({tickets,user,settings,onView}){
   );
 }
 
+// Continuing in next part...
+
 // ── DASHBOARD ─────────────────────────────────────────────────
-function Dashboard({tickets,clients,devices,users,slaMeta,settings,onView}){
+function Dashboard({tickets,clients,devices,users,slaMeta,settings,onView,dashboardFilter,setDashboardFilter}){
   const open=tickets.filter(t=>["Open","Assigned","Accepted","In Progress"].includes(t.status)).length;
   const ph=tickets.filter(t=>t.status==="Parts Pending").length;
   const pa=tickets.filter(t=>t.status==="Parts Arrived").length;
@@ -633,11 +667,59 @@ function Dashboard({tickets,clients,devices,users,slaMeta,settings,onView}){
   const ftf=res.length?Math.round(res.filter(t=>t.resolvedAt&&daysBetween(t.createdAt,t.resolvedAt)===0).length/res.length*100):0;
   const mttr=res.length?(res.reduce((s,t)=>s+daysBetween(t.createdAt,t.resolvedAt||nowISO()),0)/res.length).toFixed(1):"—";
   const breached=tickets.filter(t=>{const cl=clients.find(c=>c.id===t.clientId);if(!cl?.hasSLA||t.resolvedAt)return false;return parseFloat(hoursSince(t.createdAt))>(slaMeta[cl.sla]?.respH||24);}).length;
+
+  const filteredTickets = dashboardFilter ? (() => {
+    switch(dashboardFilter) {
+      case 'open': return tickets.filter(t=>["Open","Assigned","Accepted","In Progress"].includes(t.status));
+      case 'parts-hold': return tickets.filter(t=>t.status==="Parts Pending");
+      case 'parts-arrived': return tickets.filter(t=>t.status==="Parts Arrived");
+      case 'workshop': return tickets.filter(t=>t.status==="Workshop");
+      case 'comebacks': return tickets.filter(t=>t.isComeback&&!["Closed"].includes(t.status));
+      case 'breached': return tickets.filter(t=>{const cl=clients.find(c=>c.id===t.clientId);if(!cl?.hasSLA||t.resolvedAt)return false;return parseFloat(hoursSince(t.createdAt))>(slaMeta[cl.sla]?.respH||24);});
+      default: return [];
+    }
+  })() : null;
+
+  if(dashboardFilter&&filteredTickets){
+    return(
+      <>
+        <button className="btn bg2 bsm" onClick={()=>setDashboardFilter(null)} style={{marginBottom:12}}>← Back to Dashboard</button>
+        <div className="sect" style={{marginBottom:12}}>
+          {{open:'Active Tickets',ph:'Parts Hold',pa:'Parts Arrived',ws:'Workshop',cb:'Comebacks',breached:'SLA Breached'}[dashboardFilter]||'Tickets'}
+          <span/>
+        </div>
+        <div className="tw">
+          {filteredTickets.length===0?<div className="empty"><div className="ei">📋</div><div>No tickets</div></div>
+            :<table>
+              <thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Client</th><th>Tech</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>
+              <tbody>{filteredTickets.map(t=>{const cl=clients.find(c=>c.id===t.clientId);const tech=users.find(u=>u.id===t.techId);return(
+                <tr key={t.id} onClick={()=>onView(t)}>
+                  <td className="mono">{t.id}</td>
+                  <td><div className="tt">{t.title}</div><div className="tsub">{t.category}</div></td>
+                  <td><TypeBdg t={t.type}/></td>
+                  <td style={{fontSize:12}}>{cl?.name||"—"}</td>
+                  <td>{tech?<div style={{display:"flex",alignItems:"center",gap:6}}><Av u={tech} sz={20}/><span style={{fontSize:12}}>{tech.name}</span></div>:<span style={{fontSize:11,color:"var(--mu)"}}>Unassigned</span>}</td>
+                  <td><PriBdg v={t.priority}/></td>
+                  <td><StaBdg v={t.status}/></td>
+                  <td className="mono">{fmtD(t.createdAt)}</td>
+                </tr>
+              );})}
+              </tbody>
+            </table>}
+        </div>
+      </>
+    );
+  }
+
   return(
     <>
       <div className="sg">
-        {[{n:open,l:"Active",c:"var(--blue)",s:"Open & in progress"},{n:ph,l:"Parts Hold",c:"var(--amb)",s:"Waiting parts"},{n:pa,l:"Parts Arrived",c:"var(--grn)",s:"Ready to fit"},{n:ws,l:"Workshop",c:"var(--pur)",s:"For repair"},{n:cb,l:"Comebacks",c:"var(--red)",s:"Repeat visits"},{n:breached,l:"SLA Breach",c:"var(--red)",s:"Needs attention"},{n:ftf+"%",l:"FTF Rate",c:"var(--acc)"},{n:mttr+"d",l:"Avg MTTR",c:"var(--grn)"}].map(s=>(
-          <div className="sc" key={s.l}><div className="sc-n" style={{color:s.c}}>{s.n}</div><div className="sc-l">{s.l}</div>{s.s&&<div className="sc-s">{s.s}</div>}</div>
+        {[{n:open,l:"Active",c:"var(--blue)",s:"Open & in progress",f:"open"},{n:ph,l:"Parts Hold",c:"var(--amb)",s:"Waiting parts",f:"parts-hold"},{n:pa,l:"Parts Arrived",c:"var(--grn)",s:"Ready to fit",f:"parts-arrived"},{n:ws,l:"Workshop",c:"var(--pur)",s:"For repair",f:"workshop"},{n:cb,l:"Comebacks",c:"var(--red)",s:"Repeat visits",f:"comebacks"},{n:breached,l:"SLA Breach",c:"var(--red)",s:"Needs attention",f:"breached"},{n:ftf+"%",l:"FTF Rate",c:"var(--acc)"},{n:mttr+"d",l:"Avg MTTR",c:"var(--grn)"}].map(s=>(
+          <div className="sc" key={s.l} onClick={s.f?()=>setDashboardFilter(s.f):null} style={{cursor:s.f?"pointer":"default"}}>
+            <div className="sc-n" style={{color:s.c}}>{s.n}</div>
+            <div className="sc-l">{s.l}</div>
+            {s.s&&<div className="sc-s">{s.s}</div>}
+          </div>
         ))}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:8,marginBottom:14}}>
@@ -736,6 +818,12 @@ function TicketDetail({ticket,tickets,clients,devices,users,user,isTech,isCtrl,i
   const [ddOpen,setDdOpen]=useState(false);
   const [ddMode,setDdMode]=useState(null);
   const [decReason,setDecReason]=useState("");
+  const [meterReading,setMeterReading]=useState(ticket.meterReading||"");
+  const [distanceTravelled,setDistanceTravelled]=useState(ticket.distanceTravelled||"");
+  const [colourReading,setColourReading]=useState(ticket.colourReading||"");
+  const [monoReading,setMonoReading]=useState(ticket.monoReading||"");
+  const [colourLargeReading,setColourLargeReading]=useState(ticket.colourLargeReading||"");
+  const [monoLargeReading,setMonoLargeReading]=useState(ticket.monoLargeReading||"");
   const ddRef=useRef();
   useEffect(()=>{const h=e=>{if(ddRef.current&&!ddRef.current.contains(e.target))setDdOpen(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
 
@@ -760,7 +848,25 @@ function TicketDetail({ticket,tickets,clients,devices,users,user,isTech,isCtrl,i
     if(ddMode==="hold") await patchTicket(ticket.id,{status:"Parts Pending"},{action:"parts_hold",note:`On hold — parts: ${note}`},{toRole:ROLES.MANAGER,toId:null,msg:`⏸ ${ticket.id} on hold — parts needed: ${note} · Tech: ${user.name}`});
     else if(ddMode==="workshop"){await patchTicket(ticket.id,{status:"Workshop"},{action:"workshop",note:`Sent to workshop: ${note}`},{toRole:ROLES.MANAGER,toId:null,msg:`🔧 ${ticket.id} sent to WORKSHOP — ${note}`});await patchTicket(ticket.id,{},{},{toRole:ROLES.CONTROLLER,toId:null,msg:`🔧 Workshop: ${ticket.id} — ${note}`});}
     else if(ddMode==="escalate"){await patchTicket(ticket.id,{status:"Escalated"},{action:"escalated",note:`Escalated: ${note}`},{toRole:ROLES.MANAGER,toId:null,msg:`🚨 ${ticket.id} ESCALATED — ${note} · Tech: ${user.name}`});}
-    else if(ddMode==="resolve"){await patchTicket(ticket.id,{status:"Resolved",resolvedAt:nowISO()},{action:"resolved",note},null);if(dev)await addDevEv(dev.id,{type:"resolved",ticketId:ticket.id,desc:`Resolved: ${note}`,ts:nowISO()});}
+    else if(ddMode==="resolve"){
+      const updateData={status:"Resolved",resolvedAt:nowISO()};
+      if(meterReading) updateData.meterReading=+meterReading;
+      if(distanceTravelled) updateData.distanceTravelled=+distanceTravelled;
+      if(colourReading) updateData.colourReading=+colourReading;
+      if(monoReading) updateData.monoReading=+monoReading;
+      if(colourLargeReading) updateData.colourLargeReading=+colourLargeReading;
+      if(monoLargeReading) updateData.monoLargeReading=+monoLargeReading;
+      await patchTicket(ticket.id,updateData,{action:"resolved",note},null);
+      if(dev){
+        const meterDesc=`Resolved: ${note}${meterReading?` · Total Meter: ${Number(meterReading).toLocaleString()} pages`:""}`+
+          `${colourReading?` · Colour: ${Number(colourReading).toLocaleString()}`:""}`+
+          `${monoReading?` · Mono: ${Number(monoReading).toLocaleString()}`:""}`+
+          `${colourLargeReading?` · Colour Large: ${Number(colourLargeReading).toLocaleString()}`:""}`+
+          `${monoLargeReading?` · Mono Large: ${Number(monoLargeReading).toLocaleString()}`:""}`+
+          `${distanceTravelled?` · Distance: ${Number(distanceTravelled).toFixed(1)}km`:""}`;
+        await addDevEv(dev.id,{type:"resolved",ticketId:ticket.id,desc:meterDesc,colourReading:+colourReading||null,monoReading:+monoReading||null,colourLargeReading:+colourLargeReading||null,monoLargeReading:+monoLargeReading||null,distanceTravelled:+distanceTravelled||null,ts:nowISO()});
+      }
+    }
     else if(ddMode==="note") await patchTicket(ticket.id,{},{action:"note",note},null);
     setNote("");setDdMode(null);
   }
@@ -836,6 +942,21 @@ function TicketDetail({ticket,tickets,clients,devices,users,user,isTech,isCtrl,i
               {ticket.serial&&<div className="di"><div className="dil">Serial</div><div className="div2 mono" style={{color:"var(--tx)",fontSize:12}}>{ticket.serial}</div></div>}
               {dev?.location&&<div className="di"><div className="dil">Location</div><div className="div2">{dev.location}</div></div>}
             </div>}
+            {ticket.meterReading&&<div className="dg2">
+              <div className="di"><div className="dil">Meter Reading</div><div className="div2">{Number(ticket.meterReading).toLocaleString()} pages</div></div>
+              {ticket.distanceTravelled&&<div className="di"><div className="dil">Distance</div><div className="div2">{Number(ticket.distanceTravelled).toFixed(1)} km</div></div>}
+            </div>}
+            {(ticket.colourReading||ticket.monoReading||ticket.colourLargeReading||ticket.monoLargeReading)&&<div style={{background:"var(--s2)",border:"1px solid var(--rim)",borderRadius:9,padding:12}}>
+              <div style={{fontWeight:600,fontSize:11,marginBottom:8,color:"var(--acc)"}}>📊 DETAILED METER READINGS</div>
+              <div className="fr2">
+                {ticket.colourReading&&<div className="di"><div className="dil">Colour</div><div className="div2">{Number(ticket.colourReading).toLocaleString()}</div></div>}
+                {ticket.monoReading&&<div className="di"><div className="dil">Mono</div><div className="div2">{Number(ticket.monoReading).toLocaleString()}</div></div>}
+              </div>
+              <div className="fr2">
+                {ticket.colourLargeReading&&<div className="di"><div className="dil">Colour Large</div><div className="div2">{Number(ticket.colourLargeReading).toLocaleString()}</div></div>}
+                {ticket.monoLargeReading&&<div className="di"><div className="dil">Mono Large</div><div className="div2">{Number(ticket.monoLargeReading).toLocaleString()}</div></div>}
+              </div>
+            </div>}
             <div className="ddesc"><div className="dil" style={{marginBottom:6}}>Description</div><p>{ticket.description||"No description."}</p></div>
             {ticket.isComeback&&<div className="flag-box">🔁 Comeback — serial {ticket.serial||"—"} had a resolved ticket within {settings?.comebackDays||30} days.</div>}
             {isWS&&<div className="ws-box">🔧 Unit at workshop. Mark "Returned" when unit is back, then re-assign.</div>}
@@ -878,9 +999,30 @@ function TicketDetail({ticket,tickets,clients,devices,users,user,isTech,isCtrl,i
                 </div>
               </div>
             )}
-            {ddMode&&ddMode!=="decline"&&!isClosed&&(
+            {ddMode==="resolve"&&!isClosed&&(
               <div style={{background:"var(--s2)",border:"1px solid var(--rim2)",borderRadius:10,padding:14,display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{fontWeight:600,fontSize:13}}>{{hold:"⏸ On Hold — Parts Needed",workshop:"🔧 Send to Workshop",escalate:"🚨 Escalate to Expert",resolve:"✅ Mark Resolved",note:"💬 Add Note"}[ddMode]}</div>
+                <div style={{fontWeight:600,fontSize:13}}>✅ Mark Resolved - Add Meter & Distance</div>
+                <textarea className="ta" placeholder="Describe how the issue was resolved…" value={note} onChange={e=>setNote(e.target.value)}/>
+                <div className="fr2">
+                  <Fld label="Distance Travelled (km)" hint="Distance driven for this call"><input className="inp" type="number" step="0.1" value={distanceTravelled} onChange={e=>setDistanceTravelled(e.target.value)} placeholder="e.g. 12.5"/></Fld>
+                </div>
+                <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:9,padding:12}}>
+                  <div style={{fontWeight:600,fontSize:12,marginBottom:10,color:"var(--acc)"}}>📊 Meter Readings</div>
+                  <div className="fr2">
+                    <Fld label="Colour" hint="Colour pages"><input className="inp" type="number" placeholder="e.g. 5000"/></Fld>
+                    <Fld label="Mono" hint="B&W pages"><input className="inp" type="number" placeholder="e.g. 40000"/></Fld>
+                  </div>
+                  <div className="fr2">
+                    <Fld label="Colour Large" hint="Large colour pages"><input className="inp" type="number" placeholder="e.g. 100"/></Fld>
+                    <Fld label="Mono Large" hint="Large B&W pages"><input className="inp" type="number" placeholder="e.g. 500"/></Fld>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={submitAction}>Submit</button><button className="btn bg2 bsm" onClick={()=>{setDdMode(null);setNote("");setMeterReading("");setDistanceTravelled("");setColourReading("");setMonoReading("");setColourLargeReading("");setMonoLargeReading("");}}> Cancel</button></div>
+              </div>
+            )}
+            {ddMode&&ddMode!=="resolve"&&ddMode!=="decline"&&!isClosed&&(
+              <div style={{background:"var(--s2)",border:"1px solid var(--rim2)",borderRadius:10,padding:14,display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontWeight:600,fontSize:13}}>{{hold:"⏸ On Hold — Parts Needed",workshop:"🔧 Send to Workshop",escalate:"🚨 Escalate to Expert",note:"💬 Add Note"}[ddMode]}</div>
                 <textarea className="ta" placeholder={ddPlaceholders[ddMode]} value={note} onChange={e=>setNote(e.target.value)}/>
                 {ddMode==="hold"&&<div style={{fontSize:11,color:"var(--mu2)"}}>💡 Go to the Parts tab after submitting to log required parts.</div>}
                 <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={submitAction}>Submit</button><button className="btn bg2 bsm" onClick={()=>{setDdMode(null);setNote("");}}>Cancel</button></div>
@@ -996,12 +1138,15 @@ function NewTicketModal({clients,devices,users,user,onClose,onSave}){
 }
 
 // ── PARTS PAGE ────────────────────────────────────────────────
-function PartsPage({parts,setParts,tickets,patchTicket,user,isCtrl}){
+function PartsPage({parts,setParts,tickets,patchTicket,user,isCtrl,onPartDetails}){
   const [showAdd,setShowAdd]=useState(false);const [editId,setEditId]=useState(null);
   const [f,setF]=useState({name:"",partNo:"",category:"Toner",qty:0,minQty:1,unitCost:"",supplier:""});
+  const [q,setQ]=useState("");
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const lowStock=parts.filter(p=>p.qty<=p.minQty);
   const activeParts=tickets.flatMap(t=>(t.parts||[]).map(p=>({...p,tid:t.id})));
+  const filtered=parts.filter(p=>!q||p.name.toLowerCase().includes(q.toLowerCase())||p.partNo?.toLowerCase().includes(q.toLowerCase()));
+  
   async function savePart(){
     if(!f.name.trim())return;
     const newList=editId?parts.map(x=>x.id===editId?{...x,...f}:x):[...parts,{...f,id:uid()}];
@@ -1009,6 +1154,7 @@ function PartsPage({parts,setParts,tickets,patchTicket,user,isCtrl}){
     setF({name:"",partNo:"",category:"Toner",qty:0,minQty:1,unitCost:"",supplier:""});setShowAdd(false);setEditId(null);
   }
   function startEdit(p){setF({name:p.name,partNo:p.partNo,category:p.category,qty:p.qty,minQty:p.minQty,unitCost:p.unitCost,supplier:p.supplier});setEditId(p.id);setShowAdd(true);}
+  
   return(
     <>
       <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
@@ -1018,6 +1164,9 @@ function PartsPage({parts,setParts,tickets,patchTicket,user,isCtrl}){
         {isCtrl&&<div style={{marginLeft:"auto",display:"flex",alignItems:"center"}}><button className="btn bp bsm" onClick={()=>{setShowAdd(true);setEditId(null);setF({name:"",partNo:"",category:"Toner",qty:0,minQty:1,unitCost:"",supplier:""});}}>+ Add Part</button></div>}
       </div>
       {lowStock.length>0&&<div className="flag-box" style={{marginBottom:10}}>⚠️ Low stock: {lowStock.map(p=>p.name).join(", ")}</div>}
+      <div className="frow" style={{marginBottom:12}}>
+        <div className="sw"><span className="sic">🔍</span><input className="sinp" placeholder="Search parts…" value={q} onChange={e=>setQ(e.target.value)}/></div>
+      </div>
       {showAdd&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:10,padding:14,marginBottom:12,display:"flex",flexDirection:"column",gap:10}}>
         <div style={{fontWeight:700,fontSize:14}}>{editId?"Edit Part":"Add Part"}</div>
         <div className="fr2"><Fld label="Name *"><input className="inp" value={f.name} onChange={e=>s("name",e.target.value)}/></Fld><Fld label="Part No."><input className="inp" value={f.partNo} onChange={e=>s("partNo",e.target.value)}/></Fld></div>
@@ -1027,9 +1176,9 @@ function PartsPage({parts,setParts,tickets,patchTicket,user,isCtrl}){
       </div>}
       <div className="sect">Inventory<span/></div>
       <div className="tw" style={{marginBottom:14}}>
-        {parts.length===0?<div className="empty"><div className="ei">📦</div><div>No parts</div></div>
+        {filtered.length===0?<div className="empty"><div className="ei">📦</div><div>No parts</div></div>
           :<table><thead><tr><th>Name</th><th>P/N</th><th>Category</th><th>Stock</th><th>Min</th><th>Cost</th><th>Supplier</th><th></th></tr></thead>
-          <tbody>{parts.map(p=><tr key={p.id}>
+          <tbody>{filtered.map(p=><tr key={p.id}>
             <td><div className="tt">{p.name}</div></td><td className="mono">{p.partNo||"—"}</td><td style={{fontSize:12,color:"var(--mu2)"}}>{p.category}</td>
             <td><span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:800,fontSize:14,color:p.qty<=p.minQty?"var(--red)":"var(--grn)"}}>{p.qty}</span></td>
             <td style={{fontSize:12,color:"var(--mu)"}}>{p.minQty}</td><td style={{fontFamily:"JetBrains Mono,monospace",fontSize:12}}>{p.unitCost?fmtR(p.unitCost):"—"}</td><td style={{fontSize:12,color:"var(--mu2)"}}>{p.supplier||"—"}</td>
@@ -1039,8 +1188,16 @@ function PartsPage({parts,setParts,tickets,patchTicket,user,isCtrl}){
       <div className="sect">Parts on Tickets<span/></div>
       <div className="tw">
         {activeParts.length===0?<div className="empty"><div className="ei">🔧</div><div>No parts on tickets</div></div>
-          :<table><thead><tr><th>Ticket</th><th>Part</th><th>Cost</th><th>Status</th><th>Ordered</th><th>Fitted</th></tr></thead>
-          <tbody>{activeParts.map(p=><tr key={p.id}><td className="mono">{p.tid}</td><td><div className="tt">{p.name}</div></td><td style={{fontFamily:"JetBrains Mono,monospace",fontSize:12}}>{p.unitCost?fmtR(p.unitCost):"—"}</td><td><span className="bdg" style={{background:p.status==="Fitted"?"rgba(46,204,138,.12)":"rgba(251,146,60,.12)",color:p.status==="Fitted"?"var(--grn)":"var(--amb)"}}>{p.status}</span></td><td className="mono">{p.ordered?fmtD(p.ordered):"—"}</td><td className="mono">{p.fitted?fmtD(p.fitted):"—"}</td></tr>)}</tbody></table>}
+          :<table><thead><tr><th>Ticket</th><th>Part</th><th>Cost</th><th>Status</th><th>Ordered</th><th>Fitted</th><th></th></tr></thead>
+          <tbody>{activeParts.map(p=><tr key={p.id}>
+            <td className="mono" onClick={()=>onPartDetails(p)} style={{cursor:"pointer",textDecoration:"underline"}}>{p.tid}</td>
+            <td onClick={()=>onPartDetails(p)} style={{cursor:"pointer",textDecoration:"underline"}}><div className="tt">{p.name}</div></td>
+            <td style={{fontFamily:"JetBrains Mono,monospace",fontSize:12}}>{p.unitCost?fmtR(p.unitCost):"—"}</td>
+            <td><span className="bdg" style={{background:p.status==="Fitted"?"rgba(46,204,138,.12)":"rgba(251,146,60,.12)",color:p.status==="Fitted"?"var(--grn)":"var(--amb)"}}>{p.status}</span></td>
+            <td className="mono">{p.ordered?fmtD(p.ordered):"—"}</td>
+            <td className="mono">{p.fitted?fmtD(p.fitted):"—"}</td>
+            <td>{isCtrl&&p.status==="Ordered"&&<button className="btn bgrn bxs" onClick={()=>onPartDetails(p)}>Details</button>}</td>
+          </tr>)}</tbody></table>}
       </div>
     </>
   );
@@ -1129,8 +1286,11 @@ function YieldPage({devices,clients,isCtrl,addDevEv,user}){
 // ── CLIENTS PAGE ──────────────────────────────────────────────
 function ClientsPage({clients,devices,tickets,isCtrl,slaMeta}){
   const [sel,setSel]=useState(null);const [showForm,setShowForm]=useState(false);const [editId,setEditId]=useState(null);
+  const [q,setQ]=useState("");
   const [f,setF]=useState({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:true,sla:"Silver",walkIn:false});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const filtered=clients.filter(c=>!q||c.name.toLowerCase().includes(q.toLowerCase())||c.contactName?.toLowerCase().includes(q.toLowerCase())||c.email?.toLowerCase().includes(q.toLowerCase()));
+  
   async function save(){
     if(!f.name.trim())return;
     const id=editId||("cl"+uid());
@@ -1138,9 +1298,11 @@ function ClientsPage({clients,devices,tickets,isCtrl,slaMeta}){
     setShowForm(false);setEditId(null);
   }
   function startEdit(c){setF({name:c.name,contactName:c.contactName||c.contact||"",email:c.email,phone:c.phone,address:c.address||"",hasSLA:c.hasSLA,sla:c.sla,walkIn:c.walkIn});setEditId(c.id);setShowForm(true);}
+  
   return(
     <>
-      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <div className="sw"><span className="sic">🔍</span><input className="sinp" placeholder="Search clients…" value={q} onChange={e=>setQ(e.target.value)}/></div>
         {isCtrl&&<><button className="btn bg2 bsm" onClick={()=>{setF({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:false,sla:"Bronze",walkIn:true});setEditId(null);setShowForm(true);}}>+ Walk-in</button>
         <button className="btn bp bsm" onClick={()=>{setF({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:true,sla:"Silver",walkIn:false});setEditId(null);setShowForm(true);}}>+ Add Client</button></>}
       </div>
@@ -1154,8 +1316,8 @@ function ClientsPage({clients,devices,tickets,isCtrl,slaMeta}){
         <div style={{background:"var(--s2)",borderRadius:8,padding:"9px 12px",fontSize:12}}><SlaBdg t={f.sla} sm={slaMeta}/> · Response: <strong>{slaMeta[f.sla]?.respH}h</strong> · Resolution: <strong>{slaMeta[f.sla]?.resH}h</strong></div></>}
         <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={save}>{editId?"Save":"Add"}</button><button className="btn bg2 bsm" onClick={()=>{setShowForm(false);setEditId(null);}}>Cancel</button></div>
       </div>}
-      {clients.length===0?<div className="empty"><div className="ei">🏢</div><div>No clients yet</div></div>
-        :<div className="cg">{clients.map(c=>{const cDevs=devices.filter(d=>d.clientId===c.id);const openT=tickets.filter(t=>t.clientId===c.id&&!["Closed"].includes(t.status)).length;return(
+      {filtered.length===0?<div className="empty"><div className="ei">🏢</div><div>No clients yet</div></div>
+        :<div className="cg">{filtered.map(c=>{const cDevs=devices.filter(d=>d.clientId===c.id);const openT=tickets.filter(t=>t.clientId===c.id&&!["Closed"].includes(t.status)).length;return(
           <div key={c.id} className={`card ${sel===c.id?"sel":""}`} onClick={()=>setSel(sel===c.id?null:c.id)}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:9}}>
               <div><div style={{fontWeight:700,fontSize:13}}>{c.name}{c.walkIn&&<span className="bdg" style={{background:"rgba(240,160,48,.13)",color:"var(--amb)",fontSize:9,padding:"1px 5px",marginLeft:5}}>Walk-in</span>}</div><div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{c.contactName||c.contact||"—"}</div></div>
@@ -1178,10 +1340,13 @@ function ClientsPage({clients,devices,tickets,isCtrl,slaMeta}){
 // ── DEVICES PAGE ──────────────────────────────────────────────
 function DevicesPage({devices,clients,tickets,isCtrl,addDevEv}){
   const [tab,setTab]=useState("All");const [showForm,setShowForm]=useState(false);const [editId,setEditId]=useState(null);
+  const [q,setQ]=useState("");
   const [f,setF]=useState({clientId:"",type:"Copier",brand:"",model:"",serial:"",location:"",sla:"Silver"});
   const [histM,setHistM]=useState(null); const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const list=tab==="All"?devices:devices.filter(d=>d.type===tab);
+  const filtered=list.filter(d=>!q||d.brand.toLowerCase().includes(q.toLowerCase())||d.model.toLowerCase().includes(q.toLowerCase())||d.serial?.toLowerCase().includes(q.toLowerCase()));
   const openT=id=>tickets.filter(t=>t.deviceId===id&&!["Closed"].includes(t.status)).length;
+  
   async function saveDev(){
     if(!f.clientId||!f.brand.trim()||!f.model.trim())return;
     const id=editId||("dv"+uid());
@@ -1189,10 +1354,12 @@ function DevicesPage({devices,clients,tickets,isCtrl,addDevEv}){
     setShowForm(false);setEditId(null);
   }
   function startEdit(d){setF({clientId:d.clientId,type:d.type,brand:d.brand,model:d.model,serial:d.serial,location:d.location,sla:d.sla});setEditId(d.id);setShowForm(true);}
+  
   return(
     <>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div className="tabs" style={{marginBottom:0}}>{["All","IT","Copier","CCTV","PABX"].map(t=><button key={t} className={`tab ${tab===t?"on":""}`} onClick={()=>setTab(t)}>{t}</button>)}</div>
+        <div className="sw"><span className="sic">🔍</span><input className="sinp" placeholder="Search devices…" value={q} onChange={e=>setQ(e.target.value)}/></div>
         {isCtrl&&<button className="btn bp bsm" onClick={()=>{setF({clientId:"",type:"Copier",brand:"",model:"",serial:"",location:"",sla:"Silver"});setEditId(null);setShowForm(true);}}>+ Add Device</button>}
       </div>
       {showForm&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:10,padding:14,marginBottom:12,display:"flex",flexDirection:"column",gap:10}}>
@@ -1203,9 +1370,9 @@ function DevicesPage({devices,clients,tickets,isCtrl,addDevEv}){
         <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={saveDev}>{editId?"Save":"Add"}</button><button className="btn bg2 bsm" onClick={()=>{setShowForm(false);setEditId(null);}}>Cancel</button></div>
       </div>}
       <div className="tw">
-        {list.length===0?<div className="empty"><div className="ei">🖥️</div><div>No devices yet</div></div>
+        {filtered.length===0?<div className="empty"><div className="ei">🖥️</div><div>No devices</div></div>
           :<table><thead><tr><th>Brand / Model</th><th>Type</th><th>Client</th><th>SLA</th><th>Location</th><th>Serial</th><th>Open</th><th></th></tr></thead>
-          <tbody>{list.map(d=>{const cl=clients.find(c=>c.id===d.clientId);const ot=openT(d.id);return(<tr key={d.id}>
+          <tbody>{filtered.map(d=>{const cl=clients.find(c=>c.id===d.clientId);const ot=openT(d.id);return(<tr key={d.id}>
             <td><div className="tt">{d.brand} {d.model}</div></td><td><TypeBdg t={d.type}/></td>
             <td style={{fontSize:12}}>{cl?.name||"—"}</td>
             <td><SlaBdg t={d.sla} sm={INIT_SLA}/></td>
@@ -1217,7 +1384,7 @@ function DevicesPage({devices,clients,tickets,isCtrl,addDevEv}){
       </div>
       {histM&&<div className="ov" onClick={e=>e.target===e.currentTarget&&setHistM(null)}>
         <div className="modal"><div className="mhdr"><div><div className="mhdr-t">📋 {histM.brand} {histM.model}</div><div className="mhdr-s">S/N: {histM.serial||"—"}</div></div><XBtn onClick={()=>setHistM(null)}/></div>
-          <div className="mbody">{(histM.history||[]).length===0?<div className="empty"><div className="ei">📋</div><div>No history</div></div>:<div className="tl">{(histM.history||[]).map((h,i)=><div key={i} className="tl-row"><div className="tl-ic">{h.type==="part_fitted"?"⚙️":h.type==="part_ordered"?"📦":h.type==="ticket"?"🎫":h.type==="resolved"?"✅":h.type==="meter_update"?"📊":"➕"}</div><div><div className="tl-act">{h.desc}</div>{h.cost&&<div className="tl-note">Cost: {fmtR(h.cost)}</div>}<div className="tl-ts">{fmt(h.ts)}</div></div></div>)}</div>}
+          <div className="mbody">{(histM.history||[]).length===0?<div className="empty"><div className="ei">📋</div><div>No history</div></div>:<div className="tl">{(histM.history||[]).map((h,i)=><div key={i} className="tl-row"><div className="tl-ic">{h.type==="part_fitted"?"⚙️":h.type==="part_ordered"?"📦":h.type==="ticket"?"🎫":h.type==="resolved"?"✅":h.type==="meter_update"?"📊":"➕"}</div><div><div className="tl-act">{h.desc}</div>{h.cost&&<div className="tl-note">Cost: {fmtR(h.cost)}</div>}{(h.colourReading||h.monoReading||h.colourLargeReading||h.monoLargeReading)&&<div style={{background:"var(--s2)",border:"1px solid var(--rim)",borderRadius:7,padding:"8px 10px",marginTop:6,fontSize:11}}>📊 <strong>Meter Readings:</strong> {h.colourReading&&`Colour: ${Number(h.colourReading).toLocaleString()}`}{h.colourReading&&h.monoReading?" · ":""}{h.monoReading&&`Mono: ${Number(h.monoReading).toLocaleString()}`}{(h.colourReading||h.monoReading)&&h.colourLargeReading?" · ":""}{h.colourLargeReading&&`Colour Large: ${Number(h.colourLargeReading).toLocaleString()}`}{(h.colourReading||h.monoReading||h.colourLargeReading)&&h.monoLargeReading?" · ":""}{h.monoLargeReading&&`Mono Large: ${Number(h.monoLargeReading).toLocaleString()}`}{h.distanceTravelled&&` · Distance: ${Number(h.distanceTravelled).toFixed(1)}km`}</div>}<div className="tl-ts">{fmt(h.ts)}</div></div></div>)}</div>}
           </div>
         </div>
       </div>}

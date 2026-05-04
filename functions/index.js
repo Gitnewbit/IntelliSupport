@@ -1,25 +1,37 @@
 const functions = require("firebase-functions");
-const Anthropic = require("@anthropic-ai/sdk");
+const nodemailer = require("nodemailer");
 
-const anthropic = new Anthropic({
-  apiKey: "YOUR_CLAUDE_API_KEY",
-});
-
-exports.askClaude = functions.https.onRequest(async (req, res) => {
-  try {
-    const { prompt } = req.body;
-
-    const msg = await anthropic.messages.create({
-      model: "claude-3-opus-20240229",
-      max_tokens: 500,
-      messages: [
-        { role: "user", content: prompt }
-      ],
-    });
-
-    res.json({ reply: msg.content[0].text });
-
-  } catch (err) {
-    res.status(500).send(err.message);
+// Configure your email (use Gmail or business email)
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: "your-email@gmail.com",
+    pass: "your-app-password"
   }
 });
+
+exports.sendTicketEmail = functions.firestore
+  .document("tickets/{ticketId}")
+  .onCreate(async (snap, context) => {
+
+    const ticket = snap.data();
+
+    const mailOptions = {
+      from: "IntelliSupport <your-email@gmail.com>",
+      to: ticket.technicianEmail,
+      subject: `New Ticket Assigned: ${ticket.title}`,
+      html: `
+        <h2>New Support Ticket</h2>
+        <p><b>Title:</b> ${ticket.title}</p>
+        <p><b>Description:</b> ${ticket.description}</p>
+        <p><b>Priority:</b> ${ticket.priority}</p>
+      `
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log("Email sent");
+    } catch (error) {
+      console.error(error);
+    }
+  });
