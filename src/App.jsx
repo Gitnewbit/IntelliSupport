@@ -280,7 +280,7 @@ function SlaChip({ticket,clients,sm}) {
 // ══════════════════════════════════════════════════════════════
 // APP ROOT
 // ══════════════════════════════════════════════════════════════
-export default function App() {
+function App() {
   useEffect(()=>injectCSS(),[]);
 
   const [authUser,setAuthUser] = useState(undefined);
@@ -298,6 +298,9 @@ export default function App() {
   const [sbOpen,setSb]         = useState(false);
   const [dashboardFilter,setDashboardFilter] = useState(null);
   const [partsDetailModal,setPartsDetailModal] = useState(null);
+  const [invoices,setInvoices] = useState([]);
+  const [showNewInvoice,setShowNewInvoice] = useState(false);
+  const [selectedInvoice,setSelectedInvoice] = useState(null);
 
   // Firebase Auth
 useEffect(() => {
@@ -342,6 +345,7 @@ useEffect(() => {
       FS.sub("devices",  d => setDevices(d)),
       FS.sub("tickets",  d => setTickets(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
       FS.sub("parts",    d => setParts(d)),
+      FS.sub("invoices", d => setInvoices(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
     ];
     FS.get("settings","main").then(s=>{ if(s) setSettings(s); });
     return ()=>subs.forEach(u=>u());
@@ -443,11 +447,12 @@ if (!profile) {
     {grp:"Overview",items:[{id:"dashboard",ic:"📊",label:"Dashboard"}]},
     {grp:"Tickets",items:[{id:"tickets",ic:"🎫",label:"All Tickets",badge:tickets.length,bc:"rgba(0,194,255,.18)",btc:"var(--acc)"},{id:"parts",ic:"🔧",label:"Parts & Orders",badge:(partsHold+partsArr)||null,bc:"rgba(240,80,96,.18)",btc:"var(--red)"}]},
     {grp:"Assets",items:[{id:"yield",ic:"📊",label:"Consumable Yield"},{id:"clients",ic:"🏢",label:"Clients"},{id:"devices",ic:"🖥️",label:"Devices"}]},
+    {grp:"Finance",items:[{id:"billing",ic:"💰",label:"Billing & Invoices"}]},
     ...(isMgr?[{grp:"Admin",items:[{id:"team",ic:"👷",label:"Team"},{id:"performance",ic:"🏆",label:"Performance"},{id:"stats",ic:"📈",label:"Stats & KPIs"},{id:"settings",ic:"⚙️",label:"Settings"}]}]:[]),
   ];
 
   const goto = id => { setPage(id); setSb(false); };
-  const pageLabels = {dashboard:"Dashboard",tickets:isTech?"My Calls":"All Tickets",parts:"Parts & Orders",yield:"Consumable Yield",clients:"Clients",devices:"Devices",team:"Team",performance:"Performance",stats:"Stats & KPIs",settings:"Settings"};
+  const pageLabels = {dashboard:"Dashboard",tickets:isTech?"My Calls":"All Tickets",parts:"Parts & Orders",yield:"Consumable Yield",clients:"Clients",devices:"Devices",team:"Team",performance:"Performance",stats:"Stats & KPIs",billing:"Billing & Invoices",settings:"Settings"};
 
   return (
     <div className="shell">
@@ -496,6 +501,7 @@ if (!profile) {
           {!isTech&&page==="yield"&&<YieldPage devices={devices} clients={clients} isCtrl={isCtrl} addDevEv={addDevEv} user={profile}/>}
           {!isTech&&page==="clients"&&<ClientsPage clients={clients} devices={devices} tickets={tickets} isCtrl={isCtrl} slaMeta={slaMeta}/>}
           {!isTech&&page==="devices"&&<DevicesPage devices={devices} clients={clients} tickets={tickets} isCtrl={isCtrl} addDevEv={addDevEv}/>}
+          {(isCtrl||isMgr)&&page==="billing"&&<BillingPage invoices={invoices} setInvoices={setInvoices} tickets={tickets} clients={clients} users={users} profile={profile} isCtrl={isCtrl} isMgr={isMgr}/>}
           {isMgr&&page==="team"&&<TeamPage users={users} addUser={addUser} tickets={tickets}/>}
           {isMgr&&page==="performance"&&<PerformancePage tickets={tickets} users={users} settings={settings}/>}
           {isMgr&&page==="stats"&&<StatsPage tickets={tickets} clients={clients} users={users} slaMeta={slaMeta}/>}
@@ -1275,7 +1281,7 @@ function YieldPage({devices,clients,isCtrl,addDevEv,user}){
       {histM&&<div className="ov" onClick={e=>e.target===e.currentTarget&&setHistM(null)}>
         <div className="modal"><div className="mhdr"><div><div className="mhdr-t">📋 {histM.brand} {histM.model} History</div><div className="mhdr-s">S/N: {histM.serial||"—"}</div></div><XBtn onClick={()=>setHistM(null)}/></div>
           <div className="mbody">{(histM.history||[]).length===0?<div className="empty"><div className="ei">📋</div><div>No history yet</div></div>
-            :<div className="tl">{(histM.history||[]).map((h,i)=><div key={i} className="tl-row"><div className="tl-ic">{h.type==="part_fitted"?"⚙️":h.type==="part_ordered"?"📦":h.type==="ticket"?"🎫":h.type==="resolved"?"✅":h.type==="meter_update"?"📊":"➕"}</div><div><div className="tl-act">{h.desc}</div>{h.cost&&<div className="tl-note">Cost: {fmtR(h.cost)}</div>}<div className="tl-ts">{fmt(h.ts)}</div></div></div>)}</div>}
+            :<div className="tl">{(histM.history||[]).map((h,i)=><div key={i} className="tl-row"><div className="tl-ic">{h.type==="part_fitted"?"⚙️":h.type==="part_ordered"?"📦":h.type==="ticket"?"🎫":h.type==="resolved"?"✅":h.type==="meter_update"?"📊":"➕"}</div><div><div className="tl-act">{h.desc}</div>{h.cost&&<div className="tl-note">Cost: {fmtR(h.cost)}</div>}{(h.colourReading||h.monoReading||h.colourLargeReading||h.monoLargeReading)&&<div style={{background:"var(--s2)",border:"1px solid var(--rim)",borderRadius:7,padding:"8px 10px",marginTop:6,fontSize:11}}>📊 <strong>Meter Readings:</strong> {h.colourReading&&`Colour: ${Number(h.colourReading).toLocaleString()}`}{h.colourReading&&h.monoReading?" · ":""}{h.monoReading&&`Mono: ${Number(h.monoReading).toLocaleString()}`}{(h.colourReading||h.monoReading)&&h.colourLargeReading?" · ":""}{h.colourLargeReading&&`Colour Large: ${Number(h.colourLargeReading).toLocaleString()}`}{(h.colourReading||h.monoReading||h.colourLargeReading)&&h.monoLargeReading?" · ":""}{h.monoLargeReading&&`Mono Large: ${Number(h.monoLargeReading).toLocaleString()}`}{h.distanceTravelled&&` · Distance: ${Number(h.distanceTravelled).toFixed(1)}km`}</div>}<div className="tl-ts">{fmt(h.ts)}</div></div></div>)}</div>}
           </div>
         </div>
       </div>}
@@ -1555,3 +1561,275 @@ function SettingsPage({settings,saveSettings}){
     </div>
   );
 }
+
+
+// ── BILLING PAGE ──────────────────────────────────────────────
+function BillingPage({invoices, setInvoices, tickets, clients, users, profile, isCtrl, isMgr}) {
+  const [tab, setTab] = useState("invoices");
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("All");
+  
+  const [f, setF] = useState({
+    ticketId: "", clientId: "", lineItems: [], labourHours: 0, labourRate: 950, 
+    travelKm: 0, travelRate: 15, subtotal: 0, discount: 0, tax: 0, total: 0, 
+    status: "Draft", notes: "", dueDate: "", paymentTerms: 30
+  });
+  
+  const s = (k, v) => setF(p => ({...p, [k]: v}));
+  
+  const generateInvoiceNumber = () => {
+    const now = new Date();
+    const yr = now.getFullYear();
+    const mo = String(now.getMonth() + 1).padStart(2, "0");
+    const seq = String(invoices.filter(i => i.number?.startsWith(`INV-${yr}-${mo}`)).length + 1).padStart(4, "0");
+    return `INV-${yr}-${mo}-${seq}`;
+  };
+  
+  const calculateTotals = () => {
+    let sub = 0;
+    f.lineItems.forEach(li => { sub += (li.qty || 0) * (li.rate || 0); });
+    sub += (f.labourHours || 0) * (f.labourRate || 950);
+    sub += (f.travelKm || 0) * (f.travelRate || 15);
+    const disc = f.discount || 0;
+    const subtotal = Math.max(0, sub - disc);
+    const taxAmt = subtotal * 0.15;
+    const total = subtotal + taxAmt;
+    return { subtotal, discount: disc, tax: taxAmt, total };
+  };
+  
+  const totals = calculateTotals();
+  
+  async function saveInvoice() {
+    if (!f.clientId || (f.lineItems.length === 0 && f.labourHours === 0 && f.travelKm === 0)) {
+      alert("Select client and add items");
+      return;
+    }
+    const invNum = editId ? invoices.find(i => i.id === editId)?.number : generateInvoiceNumber();
+    const invData = {
+      ...f, id: editId || uid(), number: invNum, createdBy: profile.id,
+      createdAt: editId ? invoices.find(i => i.id === editId)?.createdAt : nowISO(),
+      updatedAt: nowISO(), ...totals
+    };
+    await FS.set("invoices", invData.id, invData);
+    setShowForm(false);
+    setEditId(null);
+    resetForm();
+  }
+  
+  const resetForm = () => setF({
+    ticketId: "", clientId: "", lineItems: [], labourHours: 0, labourRate: 950,
+    travelKm: 0, travelRate: 15, subtotal: 0, discount: 0, tax: 0, total: 0,
+    status: "Draft", notes: "", dueDate: "", paymentTerms: 30
+  });
+  
+  const generateInvoicePDF = (inv) => {
+    const client = clients.find(c => c.id === inv.clientId);
+    const html = `<div style="font-family:Arial;padding:20px"><div style="text-align:center;margin-bottom:20px"><div style="font-size:24px;font-weight:bold;color:#0044ff">INVOICE</div><div style="margin-top:10px"><strong>${inv.number}</strong> | ${fmtD(inv.createdAt)}</div></div><div style="margin-bottom:20px"><strong>Bill To:</strong><br/>${client?.name}<br/>${client?.email||"—"}</div><table style="width:100%;border-collapse:collapse;margin-bottom:20px"><thead><tr style="background:#f0f0f0"><th style="text-align:left;padding:8px">Description</th><th style="text-align:right;padding:8px;width:60px">Qty</th><th style="text-align:right;padding:8px;width:80px">Rate</th><th style="text-align:right;padding:8px;width:80px">Amount</th></tr></thead><tbody>${inv.lineItems?.map(li => `<tr><td style="padding:8px">${li.description}</td><td style="text-align:right;padding:8px">${li.qty}</td><td style="text-align:right;padding:8px">R ${Number(li.rate||0).toFixed(2)}</td><td style="text-align:right;padding:8px">R ${Number((li.qty||0)*(li.rate||0)).toFixed(2)}</td></tr>`).join("")||""}${inv.labourHours>0?`<tr><td style="padding:8px">Labour</td><td style="text-align:right;padding:8px">${inv.labourHours}</td><td style="text-align:right;padding:8px">R ${Number(inv.labourRate||0).toFixed(2)}</td><td style="text-align:right;padding:8px">R ${Number(inv.labourHours*inv.labourRate).toFixed(2)}</td></tr>`:""}${inv.travelKm>0?`<tr><td style="padding:8px">Travel</td><td style="text-align:right;padding:8px">${inv.travelKm}</td><td style="text-align:right;padding:8px">R ${Number(inv.travelRate||0).toFixed(2)}</td><td style="text-align:right;padding:8px">R ${Number(inv.travelKm*inv.travelRate).toFixed(2)}</td></tr>`:""}</tbody></table><div style="text-align:right;padding:10px;border-top:2px solid #333"><div style="margin:5px 0"><strong>Subtotal:</strong> R ${Number(inv.subtotal||0).toFixed(2)}</div><div style="margin:5px 0"><strong>Tax (15%):</strong> R ${Number(inv.tax||0).toFixed(2)}</div><div style="margin:10px 0;font-size:16px;color:#0044ff"><strong>TOTAL:</strong> R ${Number(inv.total||0).toFixed(2)}</div></div></div>`;
+    generatePDF(html, inv.number + ".pdf");
+  };
+  
+  const generateDeliveryNotePDF = (inv) => {
+    const client = clients.find(c => c.id === inv.clientId);
+    const html = `<div style="font-family:Arial;padding:20px"><div style="text-align:center;margin-bottom:20px"><div style="font-size:20px;font-weight:bold">DELIVERY NOTE</div><div>${inv.number}</div></div><div style="margin-bottom:20px"><strong>To:</strong> ${client?.name}<br/>${client?.address||"—"}</div><table style="width:100%;border-collapse:collapse;margin-bottom:20px"><thead><tr style="background:#f0f0f0"><th style="text-align:left;padding:8px">Item</th><th style="text-align:center;padding:8px;width:50px">Qty</th></tr></thead><tbody>${inv.lineItems?.map(li => `<tr><td style="padding:8px">${li.description}</td><td style="text-align:center;padding:8px">${li.qty}</td></tr>`).join("")||""}</tbody></table><div style="margin-top:30px;padding-top:30px;border-top:2px solid #333"><div style="display:grid;grid-template-columns:1fr 1fr;gap:20px"><div><strong>Technician:</strong><div style="border-top:1px solid #333;height:40px;margin-top:20px"></div></div><div><strong>Client:</strong><div style="border-top:1px solid #333;height:40px;margin-top:20px"></div></div></div></div></div>`;
+    generatePDF(html, inv.number + "_DeliveryNote.pdf");
+  };
+  
+  const sendInvoiceEmail = async (inv) => {
+    const client = clients.find(c => c.id === inv.clientId);
+    if (!client?.email) { alert("No email on file"); return; }
+    alert(`Email would be sent to: ${client.email}`);
+  };
+  
+  const filtered = invoices.filter(i => {
+    const matchTerm = !searchTerm || i.number?.includes(searchTerm) || clients.find(c => c.id === i.clientId)?.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchStatus = filterStatus === "All" || i.status === filterStatus;
+    return matchTerm && matchStatus;
+  });
+  
+  return (
+    <>
+      <div className="tabs" style={{marginBottom: 12}}>
+        <button className={`tab ${tab === "invoices" ? "on" : ""}`} onClick={() => setTab("invoices")}>📄 Invoices</button>
+        <button className={`tab ${tab === "reports" ? "on" : ""}`} onClick={() => setTab("reports")}>📊 Reports</button>
+      </div>
+      
+      {tab === "invoices" && (
+        <>
+          <div className="sg" style={{marginBottom: 12}}>
+            {[
+              {n: invoices.length, l: "Total", c: "var(--blue)"},
+              {n: invoices.filter(i => i.status === "Draft").length, l: "Draft", c: "var(--mu)"},
+              {n: invoices.filter(i => i.status === "Sent").length, l: "Sent", c: "var(--amb)"},
+              {n: invoices.filter(i => i.status === "Paid").length, l: "Paid", c: "var(--grn)"},
+              {n: "R " + Number(invoices.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0)).toFixed(0), l: "Revenue", c: "var(--acc)"}
+            ].map(s => (
+              <div className="sc" key={s.l}>
+                <div className="sc-n" style={{color: s.c}}>{s.n}</div>
+                <div className="sc-l">{s.l}</div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="frow" style={{marginBottom: 12}}>
+            <div className="sw">
+              <span className="sic">🔍</span>
+              <input className="sinp" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
+            </div>
+            <select className="fsl" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+              <option>All</option>
+              <option>Draft</option>
+              <option>Sent</option>
+              <option>Paid</option>
+            </select>
+            {isCtrl && <button className="btn bp bsm" onClick={() => {setShowForm(true); setEditId(null); resetForm();}}>+ Invoice</button>}
+          </div>
+          
+          {showForm && (
+            <div style={{background: "var(--s1)", border: "1px solid var(--rim)", borderRadius: 10, padding: 14, marginBottom: 12}}>
+              <div style={{fontWeight: 700, fontSize: 14, marginBottom: 12}}>Create Invoice</div>
+              <div className="fr2" style={{marginBottom: 10}}>
+                <div className="fi">
+                  <label>Client *</label>
+                  <select className="sel" value={f.clientId} onChange={e => s("clientId", e.target.value)}>
+                    <option value="">— Select —</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="fi">
+                  <label>Ticket</label>
+                  <select className="sel" value={f.ticketId} onChange={e => s("ticketId", e.target.value)}>
+                    <option value="">— None —</option>
+                    {tickets.map(t => <option key={t.id} value={t.id}>{t.id}</option>)}
+                  </select>
+                </div>
+              </div>
+              
+              <div style={{background: "var(--s2)", borderRadius: 9, padding: 12, marginBottom: 10}}>
+                <div style={{fontWeight: 600, fontSize: 12, marginBottom: 8}}>Items</div>
+                {f.lineItems.map((li, i) => (
+                  <div key={i} className="fr3" style={{marginBottom: 8, gap: 8}}>
+                    <input className="inp" placeholder="Description" value={li.description || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].description = e.target.value; s("lineItems", nli);}}/>
+                    <input className="inp" type="number" placeholder="Qty" value={li.qty || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].qty = +e.target.value; s("lineItems", nli);}}/>
+                    <input className="inp" type="number" placeholder="Rate" value={li.rate || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].rate = +e.target.value; s("lineItems", nli);}}/>
+                  </div>
+                ))}
+                <button className="btn bg2 bxs" onClick={() => s("lineItems", [...f.lineItems, {description: "", qty: 1, rate: 0}])}>+ Item</button>
+              </div>
+              
+              <div className="fr3" style={{marginBottom: 10}}>
+                <div className="fi"><label>Labour Hours</label><input className="inp" type="number" step="0.5" value={f.labourHours} onChange={e => s("labourHours", +e.target.value)}/></div>
+                <div className="fi"><label>Rate/Hr</label><input className="inp" type="number" value={f.labourRate} onChange={e => s("labourRate", +e.target.value)}/></div>
+                <div className="fi" style={{marginTop: "auto"}}><label style={{color: "var(--mu)"}}>= R {Number(f.labourHours * f.labourRate).toFixed(2)}</label></div>
+              </div>
+              
+              <div className="fr3" style={{marginBottom: 10}}>
+                <div className="fi"><label>Travel (km)</label><input className="inp" type="number" step="0.1" value={f.travelKm} onChange={e => s("travelKm", +e.target.value)}/></div>
+                <div className="fi"><label>Rate/km</label><input className="inp" type="number" value={f.travelRate} onChange={e => s("travelRate", +e.target.value)}/></div>
+                <div className="fi" style={{marginTop: "auto"}}><label style={{color: "var(--mu)"}}>= R {Number(f.travelKm * f.travelRate).toFixed(2)}</label></div>
+              </div>
+              
+              <div className="fi" style={{marginBottom: 10}}>
+                <label>Discount</label>
+                <input className="inp" type="number" value={f.discount} onChange={e => s("discount", +e.target.value)}/>
+              </div>
+              
+              <div style={{background: "var(--s2)", borderRadius: 9, padding: 12, marginBottom: 10, fontSize: 12}}>
+                <div style={{display: "flex", justifyContent: "space-between", marginBottom: 5}}><span>Subtotal:</span><strong>R {Number(totals.subtotal).toFixed(2)}</strong></div>
+                <div style={{display: "flex", justifyContent: "space-between", marginBottom: 5}}><span>Tax (15%):</span><strong>R {Number(totals.tax).toFixed(2)}</strong></div>
+                <div style={{display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: "bold", color: "var(--acc)", paddingTop: 8, borderTop: "1px solid var(--rim)"}}><span>TOTAL:</span><strong>R {Number(totals.total).toFixed(2)}</strong></div>
+              </div>
+              
+              <div style={{display: "flex", gap: 8}}>
+                <button className="btn bp bsm" onClick={saveInvoice}>Save</button>
+                <button className="btn bg2 bsm" onClick={() => {setShowForm(false); resetForm();}}>Cancel</button>
+              </div>
+            </div>
+          )}
+          
+          {filtered.length === 0 ? (
+            <div className="empty"><div className="ei">📄</div><div>No invoices</div></div>
+          ) : (
+            <div className="cg">
+              {filtered.map(inv => {
+                const cl = clients.find(c => c.id === inv.clientId);
+                return (
+                  <div key={inv.id} className="card">
+                    <div style={{display: "flex", justifyContent: "space-between", marginBottom: 10}}>
+                      <div>
+                        <div style={{fontWeight: 700}}>{inv.number}</div>
+                        <div style={{fontSize: 10, color: "var(--mu)", marginTop: 2}}>{cl?.name}</div>
+                      </div>
+                      <span className="bdg" style={{background: inv.status === "Paid" ? "rgba(46,204,138,.12)" : "rgba(240,160,48,.12)", color: inv.status === "Paid" ? "var(--grn)" : "var(--amb)"}}>{inv.status}</span>
+                    </div>
+                    <div className="crow"><span className="crl">Amount</span><span className="crv">R {Number(inv.total || 0).toFixed(2)}</span></div>
+                    <div className="crow"><span className="crl">Date</span><span className="crv">{fmtD(inv.createdAt)}</span></div>
+                    <div className="cacts" style={{marginTop: 8}}>
+                      <button className="btn bg2 bxs" onClick={() => generateInvoicePDF(inv)}>📄 PDF</button>
+                      <button className="btn bg2 bxs" onClick={() => generateDeliveryNotePDF(inv)}>📦 Delivery</button>
+                      <button className="btn bg2 bxs" onClick={() => sendInvoiceEmail(inv)}>✉️ Email</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+      
+      {tab === "reports" && (
+        <>
+          <div className="sg" style={{marginBottom: 16}}>
+            {[
+              {title: "Revenue", value: "R " + Number(invoices.reduce((s, i) => s + i.total, 0)).toFixed(0), icon: "💰"},
+              {title: "Outstanding", value: "R " + Number(invoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.total, 0)).toFixed(0), icon: "⏳"},
+              {title: "Avg Invoice", value: "R " + Number(invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0).toFixed(0), icon: "📊"},
+              {title: "Overdue", value: invoices.filter(i => i.status !== "Paid" && new Date(i.dueDate || new Date(i.createdAt).getTime() + i.paymentTerms * 86400000) < new Date()).length, icon: "🚨"}
+            ].map((s, i) => (
+              <div className="sc" key={i}>
+                <div style={{fontSize: 20, marginBottom: 5}}>{s.icon}</div>
+                <div className="sc-n">{s.value}</div>
+                <div className="sc-l">{s.title}</div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="sect">By Client<span/></div>
+          <div className="tw">
+            <table>
+              <thead>
+                <tr><th>Client</th><th>Invoices</th><th>Total</th><th>Paid</th></tr>
+              </thead>
+              <tbody>
+                {clients.map(c => {
+                  const cinv = invoices.filter(i => i.clientId === c.id);
+                  const paid = cinv.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0);
+                  return (
+                    <tr key={c.id}>
+                      <td>{c.name}</td>
+                      <td>{cinv.length}</td>
+                      <td>R {Number(cinv.reduce((s, i) => s + i.total, 0)).toFixed(2)}</td>
+                      <td style={{color: "var(--grn)"}}>R {Number(paid).toFixed(2)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function generatePDF(content, filename) {
+  const printWindow = window.open('', '', 'height=600,width=800');
+  printWindow.document.write('<html><head><title>' + filename + '</title><style>body{margin:0;font-family:Arial,sans-serif;background:white}</style></head><body>');
+  printWindow.document.write(content);
+  printWindow.document.write('</body></html>');
+  printWindow.document.close();
+  setTimeout(() => printWindow.print(), 250);
+}
+
+export default App;
