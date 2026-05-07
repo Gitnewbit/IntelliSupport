@@ -1293,7 +1293,7 @@ function YieldPage({devices,clients,isCtrl,addDevEv,user}){
 function ClientsPage({clients,devices,tickets,isCtrl,slaMeta}){
   const [sel,setSel]=useState(null);const [showForm,setShowForm]=useState(false);const [editId,setEditId]=useState(null);
   const [q,setQ]=useState("");
-  const [f,setF]=useState({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:true,sla:"Silver",walkIn:false});
+  const [f,setF]=useState({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:true,sla:"Silver",walkIn:false,vatNumber:""});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const filtered=clients.filter(c=>!q||c.name.toLowerCase().includes(q.toLowerCase())||c.contactName?.toLowerCase().includes(q.toLowerCase())||c.email?.toLowerCase().includes(q.toLowerCase()));
   
@@ -1303,23 +1303,24 @@ function ClientsPage({clients,devices,tickets,isCtrl,slaMeta}){
     await FS.set("clients",id,{...f,id});
     setShowForm(false);setEditId(null);
   }
-  function startEdit(c){setF({name:c.name,contactName:c.contactName||c.contact||"",email:c.email,phone:c.phone,address:c.address||"",hasSLA:c.hasSLA,sla:c.sla,walkIn:c.walkIn});setEditId(c.id);setShowForm(true);}
+  function startEdit(c){setF({name:c.name,contactName:c.contactName||c.contact||"",email:c.email,phone:c.phone,address:c.address||"",hasSLA:c.hasSLA,sla:c.sla,walkIn:c.walkIn,vatNumber:c.vatNumber||""});setEditId(c.id);setShowForm(true);}
   
   return(
     <>
       <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:12,flexWrap:"wrap"}}>
         <div className="sw"><span className="sic">🔍</span><input className="sinp" placeholder="Search clients…" value={q} onChange={e=>setQ(e.target.value)}/></div>
-        {isCtrl&&<><button className="btn bg2 bsm" onClick={()=>{setF({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:false,sla:"Bronze",walkIn:true});setEditId(null);setShowForm(true);}}>+ Walk-in</button>
-        <button className="btn bp bsm" onClick={()=>{setF({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:true,sla:"Silver",walkIn:false});setEditId(null);setShowForm(true);}}>+ Add Client</button></>}
+        {isCtrl&&<><button className="btn bg2 bsm" onClick={()=>{setF({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:false,sla:"None",walkIn:true,vatNumber:""});setEditId(null);setShowForm(true);}}>+ Walk-in</button>
+        <button className="btn bp bsm" onClick={()=>{setF({name:"",contactName:"",email:"",phone:"",address:"",hasSLA:true,sla:"Silver",walkIn:false,vatNumber:""});setEditId(null);setShowForm(true);}}>+ Add Client</button></>}
       </div>
       {showForm&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:10,padding:14,marginBottom:12,display:"flex",flexDirection:"column",gap:10}}>
         <div style={{fontWeight:700,fontSize:14}}>{editId?"Edit Client":f.walkIn?"Walk-in Client":"Add Client"}</div>
         <div className="fr2"><Fld label="Company / Name *"><input className="inp" value={f.name} onChange={e=>s("name",e.target.value)}/></Fld><Fld label="Contact Name"><input className="inp" value={f.contactName} onChange={e=>s("contactName",e.target.value)} placeholder="Primary contact person"/></Fld></div>
         <div className="fr2"><Fld label="Email"><input className="inp" type="email" value={f.email} onChange={e=>s("email",e.target.value)}/></Fld><Fld label="Phone"><input className="inp" value={f.phone} onChange={e=>s("phone",e.target.value)}/></Fld></div>
         <Fld label="Address"><textarea className="ta" style={{minHeight:60}} value={f.address} onChange={e=>s("address",e.target.value)} placeholder={"Street address, Suburb, City, Province, Postal Code"}/></Fld>
+        <div className="fr2"><Fld label="VAT Number (Optional)"><input className="inp" value={f.vatNumber} onChange={e=>s("vatNumber",e.target.value)} placeholder="e.g., 4812345678" maxLength="10"/></Fld></div>
         <div style={{display:"flex",gap:20}}><Tgl on={f.walkIn} onChange={v=>s("walkIn",v)} label="Walk-in"/><Tgl on={f.hasSLA} onChange={v=>s("hasSLA",v)} label="Has SLA"/></div>
-        {f.hasSLA&&<><Fld label="SLA Tier"><select className="sel" value={f.sla} onChange={e=>s("sla",e.target.value)}>{SLA_TIERS.map(t=><option key={t}>{t}</option>)}</select></Fld>
-        <div style={{background:"var(--s2)",borderRadius:8,padding:"9px 12px",fontSize:12}}><SlaBdg t={f.sla} sm={slaMeta}/> · Response: <strong>{slaMeta[f.sla]?.respH}h</strong> · Resolution: <strong>{slaMeta[f.sla]?.resH}h</strong></div></>}
+        {f.hasSLA&&<><Fld label="SLA Tier"><select className="sel" value={f.sla} onChange={e=>s("sla",e.target.value)}><option>None</option>{SLA_TIERS.map(t=><option key={t}>{t}</option>)}</select></Fld>
+        {f.sla!=="None"&&<div style={{background:"var(--s2)",borderRadius:8,padding:"9px 12px",fontSize:12}}><SlaBdg t={f.sla} sm={slaMeta}/> · Response: <strong>{slaMeta[f.sla]?.respH}h</strong> · Resolution: <strong>{slaMeta[f.sla]?.resH}h</strong></div>}</>}
         <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={save}>{editId?"Save":"Add"}</button><button className="btn bg2 bsm" onClick={()=>{setShowForm(false);setEditId(null);}}>Cancel</button></div>
       </div>}
       {filtered.length===0?<div className="empty"><div className="ei">🏢</div><div>No clients yet</div></div>
@@ -1327,14 +1328,15 @@ function ClientsPage({clients,devices,tickets,isCtrl,slaMeta}){
           <div key={c.id} className={`card ${sel===c.id?"sel":""}`} onClick={()=>setSel(sel===c.id?null:c.id)}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:9}}>
               <div><div style={{fontWeight:700,fontSize:13}}>{c.name}{c.walkIn&&<span className="bdg" style={{background:"rgba(240,160,48,.13)",color:"var(--amb)",fontSize:9,padding:"1px 5px",marginLeft:5}}>Walk-in</span>}</div><div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{c.contactName||c.contact||"—"}</div></div>
-              {c.hasSLA?<SlaBdg t={c.sla} sm={slaMeta}/>:<span className="bdg" style={{background:"var(--s3)",color:"var(--mu)"}}>No SLA</span>}
+              {c.hasSLA&&c.sla!=="None"?<SlaBdg t={c.sla} sm={slaMeta}/>:<span className="bdg" style={{background:"var(--s3)",color:"var(--mu)"}}>No SLA</span>}
             </div>
             {c.email&&<div className="crow"><span className="crl">Email</span><span className="crv" style={{fontSize:11}}>{c.email}</span></div>}
             {c.phone&&<div className="crow"><span className="crl">Phone</span><span className="crv">{c.phone}</span></div>}
+            {c.vatNumber&&<div className="crow"><span className="crl">VAT</span><span className="crv">{c.vatNumber}</span></div>}
             {c.address&&<div className="crow" style={{alignItems:"flex-start"}}><span className="crl">Address</span><span className="crv" style={{fontSize:11,whiteSpace:"pre-line",textAlign:"right",maxWidth:200}}>{c.address}</span></div>}
             <div className="crow"><span className="crl">Devices</span><span className="crv">{cDevs.length}</span></div>
             <div className="crow"><span className="crl">Active Tickets</span><span className="crv" style={{color:openT>0?"var(--amb)":"var(--grn)"}}>{openT}</span></div>
-            {c.hasSLA&&<div className="crow"><span className="crl">Resp / Res.</span><span className="crv">{slaMeta[c.sla]?.respH}h / {slaMeta[c.sla]?.resH}h</span></div>}
+            {c.hasSLA&&c.sla!=="None"&&<div className="crow"><span className="crl">Resp / Res.</span><span className="crv">{slaMeta[c.sla]?.respH}h / {slaMeta[c.sla]?.resH}h</span></div>}
             {sel===c.id&&isCtrl&&<div className="cacts" onClick={e=>e.stopPropagation()}><button className="btn bg2 bxs" onClick={()=>startEdit(c)}>✏️ Edit</button><button className="btn bd bxs" style={{marginLeft:"auto"}} onClick={async()=>{await FS.del("clients",c.id);setSel(null);}}>Delete</button></div>}
           </div>
         );})}
@@ -1564,263 +1566,29 @@ function SettingsPage({settings,saveSettings}){
 
 
 // ── BILLING PAGE ──────────────────────────────────────────────
+
 function BillingPage({invoices, setInvoices, tickets, clients, users, profile, isCtrl, isMgr}) {
   const [tab, setTab] = useState("invoices");
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
+  const [paymentFilter, setPaymentFilter] = useState("All");
   
-  const [f, setF] = useState({
-    ticketId: "", clientId: "", lineItems: [], labourHours: 0, labourRate: 950, 
-    travelKm: 0, travelRate: 15, subtotal: 0, discount: 0, tax: 0, total: 0, 
-    status: "Draft", notes: "", dueDate: "", paymentTerms: 30
-  });
-  
+  const [f, setF] = useState({ticketId: "", clientId: "", lineItems: [], labourHours: 0, labourRate: 950, travelKm: 0, travelRate: 15, subtotal: 0, discount: 0, tax: 0, total: 0, status: "Draft", notes: "", dueDate: "", paymentTerms: 30, paidDate: "", deliveryDate: ""});
   const s = (k, v) => setF(p => ({...p, [k]: v}));
-  
-  const generateInvoiceNumber = () => {
-    const now = new Date();
-    const yr = now.getFullYear();
-    const mo = String(now.getMonth() + 1).padStart(2, "0");
-    const seq = String(invoices.filter(i => i.number?.startsWith(`INV-${yr}-${mo}`)).length + 1).padStart(4, "0");
-    return `INV-${yr}-${mo}-${seq}`;
-  };
-  
-  const calculateTotals = () => {
-    let sub = 0;
-    f.lineItems.forEach(li => { sub += (li.qty || 0) * (li.rate || 0); });
-    sub += (f.labourHours || 0) * (f.labourRate || 950);
-    sub += (f.travelKm || 0) * (f.travelRate || 15);
-    const disc = f.discount || 0;
-    const subtotal = Math.max(0, sub - disc);
-    const taxAmt = subtotal * 0.15;
-    const total = subtotal + taxAmt;
-    return { subtotal, discount: disc, tax: taxAmt, total };
-  };
-  
+  const generateInvoiceNumber = () => {const now = new Date(); const yr = now.getFullYear(); const mo = String(now.getMonth() + 1).padStart(2, "0"); const seq = String(invoices.filter(i => i.number?.startsWith(`INV-${yr}-${mo}`)).length + 1).padStart(4, "0"); return `INV-${yr}-${mo}-${seq}`;};
+  const calculateTotals = () => {let sub = 0; f.lineItems.forEach(li => { sub += (li.qty || 0) * (li.rate || 0); }); sub += (f.labourHours || 0) * (f.labourRate || 950); sub += (f.travelKm || 0) * (f.travelRate || 15); const disc = f.discount || 0; const subtotal = Math.max(0, sub - disc); const taxAmt = subtotal * 0.15; const total = subtotal + taxAmt; return { subtotal, discount: disc, tax: taxAmt, total };};
   const totals = calculateTotals();
-  
-  async function saveInvoice() {
-    if (!f.clientId || (f.lineItems.length === 0 && f.labourHours === 0 && f.travelKm === 0)) {
-      alert("Select client and add items");
-      return;
-    }
-    const invNum = editId ? invoices.find(i => i.id === editId)?.number : generateInvoiceNumber();
-    const invData = {
-      ...f, id: editId || uid(), number: invNum, createdBy: profile.id,
-      createdAt: editId ? invoices.find(i => i.id === editId)?.createdAt : nowISO(),
-      updatedAt: nowISO(), ...totals
-    };
-    await FS.set("invoices", invData.id, invData);
-    setShowForm(false);
-    setEditId(null);
-    resetForm();
-  }
-  
-  const resetForm = () => setF({
-    ticketId: "", clientId: "", lineItems: [], labourHours: 0, labourRate: 950,
-    travelKm: 0, travelRate: 15, subtotal: 0, discount: 0, tax: 0, total: 0,
-    status: "Draft", notes: "", dueDate: "", paymentTerms: 30
-  });
-  
-  const generateInvoicePDF = (inv) => {
-    const client = clients.find(c => c.id === inv.clientId);
-    const html = `<div style="font-family:Arial;padding:20px"><div style="text-align:center;margin-bottom:20px"><div style="font-size:24px;font-weight:bold;color:#0044ff">INVOICE</div><div style="margin-top:10px"><strong>${inv.number}</strong> | ${fmtD(inv.createdAt)}</div></div><div style="margin-bottom:20px"><strong>Bill To:</strong><br/>${client?.name}<br/>${client?.email||"—"}</div><table style="width:100%;border-collapse:collapse;margin-bottom:20px"><thead><tr style="background:#f0f0f0"><th style="text-align:left;padding:8px">Description</th><th style="text-align:right;padding:8px;width:60px">Qty</th><th style="text-align:right;padding:8px;width:80px">Rate</th><th style="text-align:right;padding:8px;width:80px">Amount</th></tr></thead><tbody>${inv.lineItems?.map(li => `<tr><td style="padding:8px">${li.description}</td><td style="text-align:right;padding:8px">${li.qty}</td><td style="text-align:right;padding:8px">R ${Number(li.rate||0).toFixed(2)}</td><td style="text-align:right;padding:8px">R ${Number((li.qty||0)*(li.rate||0)).toFixed(2)}</td></tr>`).join("")||""}${inv.labourHours>0?`<tr><td style="padding:8px">Labour</td><td style="text-align:right;padding:8px">${inv.labourHours}</td><td style="text-align:right;padding:8px">R ${Number(inv.labourRate||0).toFixed(2)}</td><td style="text-align:right;padding:8px">R ${Number(inv.labourHours*inv.labourRate).toFixed(2)}</td></tr>`:""}${inv.travelKm>0?`<tr><td style="padding:8px">Travel</td><td style="text-align:right;padding:8px">${inv.travelKm}</td><td style="text-align:right;padding:8px">R ${Number(inv.travelRate||0).toFixed(2)}</td><td style="text-align:right;padding:8px">R ${Number(inv.travelKm*inv.travelRate).toFixed(2)}</td></tr>`:""}</tbody></table><div style="text-align:right;padding:10px;border-top:2px solid #333"><div style="margin:5px 0"><strong>Subtotal:</strong> R ${Number(inv.subtotal||0).toFixed(2)}</div><div style="margin:5px 0"><strong>Tax (15%):</strong> R ${Number(inv.tax||0).toFixed(2)}</div><div style="margin:10px 0;font-size:16px;color:#0044ff"><strong>TOTAL:</strong> R ${Number(inv.total||0).toFixed(2)}</div></div></div>`;
-    generatePDF(html, inv.number + ".pdf");
-  };
-  
-  const generateDeliveryNotePDF = (inv) => {
-    const client = clients.find(c => c.id === inv.clientId);
-    const html = `<div style="font-family:Arial;padding:20px"><div style="text-align:center;margin-bottom:20px"><div style="font-size:20px;font-weight:bold">DELIVERY NOTE</div><div>${inv.number}</div></div><div style="margin-bottom:20px"><strong>To:</strong> ${client?.name}<br/>${client?.address||"—"}</div><table style="width:100%;border-collapse:collapse;margin-bottom:20px"><thead><tr style="background:#f0f0f0"><th style="text-align:left;padding:8px">Item</th><th style="text-align:center;padding:8px;width:50px">Qty</th></tr></thead><tbody>${inv.lineItems?.map(li => `<tr><td style="padding:8px">${li.description}</td><td style="text-align:center;padding:8px">${li.qty}</td></tr>`).join("")||""}</tbody></table><div style="margin-top:30px;padding-top:30px;border-top:2px solid #333"><div style="display:grid;grid-template-columns:1fr 1fr;gap:20px"><div><strong>Technician:</strong><div style="border-top:1px solid #333;height:40px;margin-top:20px"></div></div><div><strong>Client:</strong><div style="border-top:1px solid #333;height:40px;margin-top:20px"></div></div></div></div></div>`;
-    generatePDF(html, inv.number + "_DeliveryNote.pdf");
-  };
-  
-  const sendInvoiceEmail = async (inv) => {
-    const client = clients.find(c => c.id === inv.clientId);
-    if (!client?.email) { alert("No email on file"); return; }
-    alert(`Email would be sent to: ${client.email}`);
-  };
-  
-  const filtered = invoices.filter(i => {
-    const matchTerm = !searchTerm || i.number?.includes(searchTerm) || clients.find(c => c.id === i.clientId)?.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchStatus = filterStatus === "All" || i.status === filterStatus;
-    return matchTerm && matchStatus;
-  });
-  
-  return (
-    <>
-      <div className="tabs" style={{marginBottom: 12}}>
-        <button className={`tab ${tab === "invoices" ? "on" : ""}`} onClick={() => setTab("invoices")}>📄 Invoices</button>
-        <button className={`tab ${tab === "reports" ? "on" : ""}`} onClick={() => setTab("reports")}>📊 Reports</button>
-      </div>
-      
-      {tab === "invoices" && (
-        <>
-          <div className="sg" style={{marginBottom: 12}}>
-            {[
-              {n: invoices.length, l: "Total", c: "var(--blue)"},
-              {n: invoices.filter(i => i.status === "Draft").length, l: "Draft", c: "var(--mu)"},
-              {n: invoices.filter(i => i.status === "Sent").length, l: "Sent", c: "var(--amb)"},
-              {n: invoices.filter(i => i.status === "Paid").length, l: "Paid", c: "var(--grn)"},
-              {n: "R " + Number(invoices.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0)).toFixed(0), l: "Revenue", c: "var(--acc)"}
-            ].map(s => (
-              <div className="sc" key={s.l}>
-                <div className="sc-n" style={{color: s.c}}>{s.n}</div>
-                <div className="sc-l">{s.l}</div>
-              </div>
-            ))}
-          </div>
-          
-          <div className="frow" style={{marginBottom: 12}}>
-            <div className="sw">
-              <span className="sic">🔍</span>
-              <input className="sinp" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
-            </div>
-            <select className="fsl" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-              <option>All</option>
-              <option>Draft</option>
-              <option>Sent</option>
-              <option>Paid</option>
-            </select>
-            {isCtrl && <button className="btn bp bsm" onClick={() => {setShowForm(true); setEditId(null); resetForm();}}>+ Invoice</button>}
-          </div>
-          
-          {showForm && (
-            <div style={{background: "var(--s1)", border: "1px solid var(--rim)", borderRadius: 10, padding: 14, marginBottom: 12}}>
-              <div style={{fontWeight: 700, fontSize: 14, marginBottom: 12}}>Create Invoice</div>
-              <div className="fr2" style={{marginBottom: 10}}>
-                <div className="fi">
-                  <label>Client *</label>
-                  <select className="sel" value={f.clientId} onChange={e => s("clientId", e.target.value)}>
-                    <option value="">— Select —</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div className="fi">
-                  <label>Ticket</label>
-                  <select className="sel" value={f.ticketId} onChange={e => s("ticketId", e.target.value)}>
-                    <option value="">— None —</option>
-                    {tickets.map(t => <option key={t.id} value={t.id}>{t.id}</option>)}
-                  </select>
-                </div>
-              </div>
-              
-              <div style={{background: "var(--s2)", borderRadius: 9, padding: 12, marginBottom: 10}}>
-                <div style={{fontWeight: 600, fontSize: 12, marginBottom: 8}}>Items</div>
-                {f.lineItems.map((li, i) => (
-                  <div key={i} className="fr3" style={{marginBottom: 8, gap: 8}}>
-                    <input className="inp" placeholder="Description" value={li.description || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].description = e.target.value; s("lineItems", nli);}}/>
-                    <input className="inp" type="number" placeholder="Qty" value={li.qty || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].qty = +e.target.value; s("lineItems", nli);}}/>
-                    <input className="inp" type="number" placeholder="Rate" value={li.rate || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].rate = +e.target.value; s("lineItems", nli);}}/>
-                  </div>
-                ))}
-                <button className="btn bg2 bxs" onClick={() => s("lineItems", [...f.lineItems, {description: "", qty: 1, rate: 0}])}>+ Item</button>
-              </div>
-              
-              <div className="fr3" style={{marginBottom: 10}}>
-                <div className="fi"><label>Labour Hours</label><input className="inp" type="number" step="0.5" value={f.labourHours} onChange={e => s("labourHours", +e.target.value)}/></div>
-                <div className="fi"><label>Rate/Hr</label><input className="inp" type="number" value={f.labourRate} onChange={e => s("labourRate", +e.target.value)}/></div>
-                <div className="fi" style={{marginTop: "auto"}}><label style={{color: "var(--mu)"}}>= R {Number(f.labourHours * f.labourRate).toFixed(2)}</label></div>
-              </div>
-              
-              <div className="fr3" style={{marginBottom: 10}}>
-                <div className="fi"><label>Travel (km)</label><input className="inp" type="number" step="0.1" value={f.travelKm} onChange={e => s("travelKm", +e.target.value)}/></div>
-                <div className="fi"><label>Rate/km</label><input className="inp" type="number" value={f.travelRate} onChange={e => s("travelRate", +e.target.value)}/></div>
-                <div className="fi" style={{marginTop: "auto"}}><label style={{color: "var(--mu)"}}>= R {Number(f.travelKm * f.travelRate).toFixed(2)}</label></div>
-              </div>
-              
-              <div className="fi" style={{marginBottom: 10}}>
-                <label>Discount</label>
-                <input className="inp" type="number" value={f.discount} onChange={e => s("discount", +e.target.value)}/>
-              </div>
-              
-              <div style={{background: "var(--s2)", borderRadius: 9, padding: 12, marginBottom: 10, fontSize: 12}}>
-                <div style={{display: "flex", justifyContent: "space-between", marginBottom: 5}}><span>Subtotal:</span><strong>R {Number(totals.subtotal).toFixed(2)}</strong></div>
-                <div style={{display: "flex", justifyContent: "space-between", marginBottom: 5}}><span>Tax (15%):</span><strong>R {Number(totals.tax).toFixed(2)}</strong></div>
-                <div style={{display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: "bold", color: "var(--acc)", paddingTop: 8, borderTop: "1px solid var(--rim)"}}><span>TOTAL:</span><strong>R {Number(totals.total).toFixed(2)}</strong></div>
-              </div>
-              
-              <div style={{display: "flex", gap: 8}}>
-                <button className="btn bp bsm" onClick={saveInvoice}>Save</button>
-                <button className="btn bg2 bsm" onClick={() => {setShowForm(false); resetForm();}}>Cancel</button>
-              </div>
-            </div>
-          )}
-          
-          {filtered.length === 0 ? (
-            <div className="empty"><div className="ei">📄</div><div>No invoices</div></div>
-          ) : (
-            <div className="cg">
-              {filtered.map(inv => {
-                const cl = clients.find(c => c.id === inv.clientId);
-                return (
-                  <div key={inv.id} className="card">
-                    <div style={{display: "flex", justifyContent: "space-between", marginBottom: 10}}>
-                      <div>
-                        <div style={{fontWeight: 700}}>{inv.number}</div>
-                        <div style={{fontSize: 10, color: "var(--mu)", marginTop: 2}}>{cl?.name}</div>
-                      </div>
-                      <span className="bdg" style={{background: inv.status === "Paid" ? "rgba(46,204,138,.12)" : "rgba(240,160,48,.12)", color: inv.status === "Paid" ? "var(--grn)" : "var(--amb)"}}>{inv.status}</span>
-                    </div>
-                    <div className="crow"><span className="crl">Amount</span><span className="crv">R {Number(inv.total || 0).toFixed(2)}</span></div>
-                    <div className="crow"><span className="crl">Date</span><span className="crv">{fmtD(inv.createdAt)}</span></div>
-                    <div className="cacts" style={{marginTop: 8}}>
-                      <button className="btn bg2 bxs" onClick={() => generateInvoicePDF(inv)}>📄 PDF</button>
-                      <button className="btn bg2 bxs" onClick={() => generateDeliveryNotePDF(inv)}>📦 Delivery</button>
-                      <button className="btn bg2 bxs" onClick={() => sendInvoiceEmail(inv)}>✉️ Email</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-      
-      {tab === "reports" && (
-        <>
-          <div className="sg" style={{marginBottom: 16}}>
-            {[
-              {title: "Revenue", value: "R " + Number(invoices.reduce((s, i) => s + i.total, 0)).toFixed(0), icon: "💰"},
-              {title: "Outstanding", value: "R " + Number(invoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.total, 0)).toFixed(0), icon: "⏳"},
-              {title: "Avg Invoice", value: "R " + Number(invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0).toFixed(0), icon: "📊"},
-              {title: "Overdue", value: invoices.filter(i => i.status !== "Paid" && new Date(i.dueDate || new Date(i.createdAt).getTime() + i.paymentTerms * 86400000) < new Date()).length, icon: "🚨"}
-            ].map((s, i) => (
-              <div className="sc" key={i}>
-                <div style={{fontSize: 20, marginBottom: 5}}>{s.icon}</div>
-                <div className="sc-n">{s.value}</div>
-                <div className="sc-l">{s.title}</div>
-              </div>
-            ))}
-          </div>
-          
-          <div className="sect">By Client<span/></div>
-          <div className="tw">
-            <table>
-              <thead>
-                <tr><th>Client</th><th>Invoices</th><th>Total</th><th>Paid</th></tr>
-              </thead>
-              <tbody>
-                {clients.map(c => {
-                  const cinv = invoices.filter(i => i.clientId === c.id);
-                  const paid = cinv.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0);
-                  return (
-                    <tr key={c.id}>
-                      <td>{c.name}</td>
-                      <td>{cinv.length}</td>
-                      <td>R {Number(cinv.reduce((s, i) => s + i.total, 0)).toFixed(2)}</td>
-                      <td style={{color: "var(--grn)"}}>R {Number(paid).toFixed(2)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </>
-  );
+  async function saveInvoice() {if (!f.clientId || (f.lineItems.length === 0 && f.labourHours === 0 && f.travelKm === 0)) {alert("Select client and add items"); return;} const invNum = editId ? invoices.find(i => i.id === editId)?.number : generateInvoiceNumber(); const invData = {...f, id: editId || uid(), number: invNum, createdBy: profile.id, createdAt: editId ? invoices.find(i => i.id === editId)?.createdAt : nowISO(), updatedAt: nowISO(), ...totals}; await FS.set("invoices", invData.id, invData); setShowForm(false); setEditId(null); resetForm();}
+  const markAsPaid = async (invId) => {const inv = invoices.find(i => i.id === invId); if (inv) {await FS.set("invoices", invId, {...inv, status: "Paid", paidDate: nowISO()});}};
+  const markAsDelivered = async (invId) => {const inv = invoices.find(i => i.id === invId); if (inv) {await FS.set("invoices", invId, {...inv, deliveryDate: nowISO()});}};
+  const resetForm = () => setF({ticketId: "", clientId: "", lineItems: [], labourHours: 0, labourRate: 950, travelKm: 0, travelRate: 15, subtotal: 0, discount: 0, tax: 0, total: 0, status: "Draft", notes: "", dueDate: "", paymentTerms: 30, paidDate: "", deliveryDate: ""});
+  const generateInvoicePDF = (inv) => {const client = clients.find(c => c.id === inv.clientId); const html = `<div style="font-family:'Segoe UI',Arial;padding:20px;background:#fff"><div style="border-left:5px solid #0044ff;padding:15px 20px;margin-bottom:30px;background:#f8f9ff"><div style="font-size:28px;font-weight:700;color:#0044ff">INVOICE</div><div style="color:#666;margin-top:5px">Professional Service Invoice</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:30px"><div><div style="font-weight:600;color:#333;margin-bottom:5px">FROM</div><div style="font-weight:700;font-size:16px">IntelliSupport</div><div style="color:#666;font-size:14px">Field Service Management</div></div><div style="text-align:right"><div style="font-weight:600;color:#333;margin-bottom:5px">INVOICE #</div><div style="font-weight:700;font-size:18px;color:#0044ff">${inv.number}</div><div style="color:#666;font-size:13px;margin-top:5px"><div>Date: ${fmtD(inv.createdAt)}</div><div>Due: ${fmtD(inv.dueDate||new Date(new Date(inv.createdAt).getTime()+inv.paymentTerms*86400000).toISOString())}</div></div></div></div><div style="background:#f5f7fa;padding:15px;border-radius:8px;margin-bottom:30px"><div style="font-weight:600;color:#333;margin-bottom:10px">BILL TO</div><div style="font-size:15px;font-weight:700">${client?.name}</div><div style="color:#666;font-size:14px;margin-top:5px"><div>${client?.contactName||"—"}</div><div>${client?.email||"—"}</div><div>${client?.phone||"—"}</div>${client?.vatNumber?`<div>VAT: ${client.vatNumber}</div>`:""}</div></div><table style="width:100%;border-collapse:collapse;margin-bottom:30px"><thead><tr style="background:#0044ff;color:white"><th style="text-align:left;padding:12px;font-weight:600">Description</th><th style="text-align:right;padding:12px;font-weight:600;width:70px">Qty</th><th style="text-align:right;padding:12px;font-weight:600;width:100px">Unit Price</th><th style="text-align:right;padding:12px;font-weight:600;width:100px">Amount</th></tr></thead><tbody>${inv.lineItems?.map(li => `<tr style="border-bottom:1px solid #eee"><td style="padding:12px">${li.description}</td><td style="text-align:right;padding:12px">${li.qty}</td><td style="text-align:right;padding:12px">R ${Number(li.rate||0).toFixed(2)}</td><td style="text-align:right;padding:12px;font-weight:600">R ${Number((li.qty||0)*(li.rate||0)).toFixed(2)}</td></tr>`).join("")||""}${inv.labourHours>0?`<tr style="border-bottom:1px solid #eee"><td style="padding:12px">Labour - Service Call</td><td style="text-align:right;padding:12px">${inv.labourHours}</td><td style="text-align:right;padding:12px">R ${Number(inv.labourRate||0).toFixed(2)}</td><td style="text-align:right;padding:12px;font-weight:600">R ${Number(inv.labourHours*inv.labourRate).toFixed(2)}</td></tr>`:""}${inv.travelKm>0?`<tr style="border-bottom:1px solid #eee"><td style="padding:12px">Travel Distance</td><td style="text-align:right;padding:12px">${inv.travelKm}</td><td style="text-align:right;padding:12px">R ${Number(inv.travelRate||0).toFixed(2)}</td><td style="text-align:right;padding:12px;font-weight:600">R ${Number(inv.travelKm*inv.travelRate).toFixed(2)}</td></tr>`:""}</tbody></table><div style="display:flex;justify-content:flex-end;margin-bottom:30px"><div style="width:320px"><div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:2px solid #0044ff;margin-bottom:10px"><span style="font-weight:600">Subtotal:</span><span>R ${Number(inv.subtotal||0).toFixed(2)}</span></div>${inv.discount>0?`<div style="display:flex;justify-content:space-between;padding:8px 0;color:#e74c3c"><span>Discount:</span><span>-R ${Number(inv.discount).toFixed(2)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee"><span>Subtotal:</span><span>R ${Number(inv.subtotal-inv.discount).toFixed(2)}</span></div>`:""}<div style="display:flex;justify-content:space-between;padding:8px 0"><span>VAT (15%):</span><span>R ${Number(inv.tax||0).toFixed(2)}</span></div><div style="display:flex;justify-content:space-between;padding:12px 0;font-size:18px;font-weight:700;color:#0044ff"><span>TOTAL DUE:</span><span>R ${Number(inv.total||0).toFixed(2)}</span></div></div></div></div>`; generatePDF(html, inv.number + ".pdf");};
+  const generateDeliveryNotePDF = (inv) => {const client = clients.find(c => c.id === inv.clientId); const ticket = tickets.find(t => t.id === inv.ticketId); const html = `<div style="font-family:'Segoe UI',Arial;padding:20px;background:#fff"><div style="border-left:5px solid #2ecc8a;padding:15px 20px;margin-bottom:30px;background:#f0fdf4"><div style="font-size:28px;font-weight:700;color:#2ecc8a">DELIVERY NOTE</div><div style="color:#666;margin-top:5px">Parts & Materials Delivery</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:30px"><div style="background:#f5f7fa;padding:15px;border-radius:8px"><div style="font-weight:600;color:#333;margin-bottom:10px">DELIVERED TO</div><div style="font-size:15px;font-weight:700">${client?.name}</div><div style="color:#666;font-size:14px;margin-top:5px">${client?.contactName||"—"}<br/>${client?.address||"—"}</div></div><div style="background:#f5f7fa;padding:15px;border-radius:8px"><div style="font-weight:600;color:#333;margin-bottom:10px">DETAILS</div><div style="color:#666;font-size:14px"><div><strong>Invoice #:</strong> ${inv.number}</div><div><strong>Date:</strong> ${inv.deliveryDate?fmtD(inv.deliveryDate):fmtD(nowISO())}</div><div><strong>Status:</strong> <span style="background:#2ecc8a;color:white;padding:2px 8px;border-radius:4px;font-size:12px">${inv.deliveryDate?"✓ Delivered":"Pending"}</span></div></div></div></div>${ticket?`<div style="background:#e8f4f8;padding:15px;border-radius:8px;margin-bottom:30px"><div style="font-weight:600;color:#333;margin-bottom:10px">DEVICE INFORMATION</div><div style="color:#666;font-size:14px"><div><strong>${ticket.brand} ${ticket.model}</strong> | S/N: ${ticket.serial}</div><div style="margin-top:5px">Location: ${ticket.location||"—"}</div></div></div>`:""}<table style="width:100%;border-collapse:collapse;margin-bottom:30px"><thead><tr style="background:#2ecc8a;color:white"><th style="text-align:left;padding:12px;font-weight:600">Item Description</th><th style="text-align:center;padding:12px;font-weight:600;width:70px">Qty</th><th style="text-align:center;padding:12px;font-weight:600;width:50px">✓</th></tr></thead><tbody>${inv.lineItems?.map(li => `<tr style="border-bottom:1px solid #eee"><td style="padding:12px">${li.description}</td><td style="text-align:center;padding:12px">${li.qty}</td><td style="text-align:center;padding:12px">☐</td></tr>`).join("")||""}</tbody></table><div style="display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px;padding-top:30px;border-top:2px solid #2ecc8a"><div><div style="font-weight:600;color:#333;margin-bottom:20px">Technician Signature</div><div style="border-bottom:2px solid #333;height:50px;margin-bottom:5px"></div><div style="color:#666;font-size:13px">Name & Signature</div></div><div><div style="font-weight:600;color:#333;margin-bottom:20px">Client Signature</div><div style="border-bottom:2px solid #333;height:50px;margin-bottom:5px"></div><div style="color:#666;font-size:13px">Name & Signature</div></div></div></div>`; generatePDF(html, inv.number + "_DeliveryNote.pdf");};
+  const sendInvoiceEmail = async (inv) => {const client = clients.find(c => c.id === inv.clientId); if (!client?.email) { alert("No email on file"); return; } alert(`Email would be sent to: ${client.email}\n\nSubject: Invoice ${inv.number} - IntelliSupport`);};
+  const filtered = invoices.filter(i => {const matchTerm = !searchTerm || i.number?.includes(searchTerm) || clients.find(c => c.id === i.clientId)?.name.toLowerCase().includes(searchTerm.toLowerCase()); const matchStatus = filterStatus === "All" || i.status === filterStatus; const matchPayment = paymentFilter === "All" || (paymentFilter === "Paid" && i.status === "Paid") || (paymentFilter === "Unpaid" && i.status !== "Paid"); return matchTerm && matchStatus && matchPayment;});
+  return (<><div className="tabs" style={{marginBottom: 12}}><button className={`tab ${tab === "invoices" ? "on" : ""}`} onClick={() => setTab("invoices")}>📄 Invoices</button><button className={`tab ${tab === "reports" ? "on" : ""}`} onClick={() => setTab("reports")}>📊 Reports</button></div>{tab === "invoices" && (<><div className="sg" style={{marginBottom: 12}}>{[{n: invoices.length, l: "Total", c: "var(--blue)"},{n: invoices.filter(i => i.status === "Draft").length, l: "Draft", c: "var(--mu)"},{n: invoices.filter(i => i.status === "Sent").length, l: "Sent", c: "var(--amb)"},{n: invoices.filter(i => i.status === "Paid").length, l: "Paid", c: "var(--grn)"},{n: "R " + Number(invoices.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0)).toFixed(0), l: "Revenue", c: "var(--acc)"}].map(s => (<div className="sc" key={s.l}><div className="sc-n" style={{color: s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>))}</div><div className="frow" style={{marginBottom: 12, gap: 10}}><div className="sw"><span className="sic">🔍</span><input className="sinp" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div><select className="fsl" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option>All Status</option><option>Draft</option><option>Sent</option><option>Paid</option></select><select className="fsl" value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)}><option>All Payments</option><option>Paid</option><option>Unpaid</option></select>{isCtrl && <button className="btn bp bsm" onClick={() => {setShowForm(true); setEditId(null); resetForm();}}>+ Invoice</button>}</div>{showForm && (<div style={{background: "var(--s1)", border: "1px solid var(--rim)", borderRadius: 10, padding: 14, marginBottom: 12}}><div style={{fontWeight: 700, fontSize: 14, marginBottom: 12}}>Create Invoice</div><div className="fr2" style={{marginBottom: 10}}><div className="fi"><label>Client *</label><select className="sel" value={f.clientId} onChange={e => s("clientId", e.target.value)}><option value="">— Select —</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div><div className="fi"><label>Ticket</label><select className="sel" value={f.ticketId} onChange={e => s("ticketId", e.target.value)}><option value="">— None —</option>{tickets.map(t => <option key={t.id} value={t.id}>{t.id}</option>)}</select></div></div><div style={{background: "var(--s2)", borderRadius: 9, padding: 12, marginBottom: 10}}><div style={{fontWeight: 600, fontSize: 12, marginBottom: 8}}>Items</div>{f.lineItems.map((li, i) => (<div key={i} className="fr3" style={{marginBottom: 8, gap: 8}}><input className="inp" placeholder="Description" value={li.description || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].description = e.target.value; s("lineItems", nli);}}/><input className="inp" type="number" placeholder="Qty" value={li.qty || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].qty = +e.target.value; s("lineItems", nli);}}/><input className="inp" type="number" placeholder="Rate" value={li.rate || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].rate = +e.target.value; s("lineItems", nli);}}/></div>))}<button className="btn bg2 bxs" onClick={() => s("lineItems", [...f.lineItems, {description: "", qty: 1, rate: 0}])}>+ Item</button></div><div className="fr3" style={{marginBottom: 10}}><div className="fi"><label>Labour Hours</label><input className="inp" type="number" step="0.5" value={f.labourHours} onChange={e => s("labourHours", +e.target.value)}/></div><div className="fi"><label>Rate/Hr</label><input className="inp" type="number" value={f.labourRate} onChange={e => s("labourRate", +e.target.value)}/></div><div className="fi" style={{marginTop: "auto"}}><label style={{color: "var(--mu)"}}>= R {Number(f.labourHours * f.labourRate).toFixed(2)}</label></div></div><div className="fr3" style={{marginBottom: 10}}><div className="fi"><label>Travel (km)</label><input className="inp" type="number" step="0.1" value={f.travelKm} onChange={e => s("travelKm", +e.target.value)}/></div><div className="fi"><label>Rate/km</label><input className="inp" type="number" value={f.travelRate} onChange={e => s("travelRate", +e.target.value)}/></div><div className="fi" style={{marginTop: "auto"}}><label style={{color: "var(--mu)"}}>= R {Number(f.travelKm * f.travelRate).toFixed(2)}</label></div></div><div className="fi" style={{marginBottom: 10}}><label>Discount</label><input className="inp" type="number" value={f.discount} onChange={e => s("discount", +e.target.value)}/></div><div style={{background: "var(--s2)", borderRadius: 9, padding: 12, marginBottom: 10, fontSize: 12}}><div style={{display: "flex", justifyContent: "space-between", marginBottom: 5}}><span>Subtotal:</span><strong>R {Number(totals.subtotal).toFixed(2)}</strong></div><div style={{display: "flex", justifyContent: "space-between", marginBottom: 5}}><span>Tax (15%):</span><strong>R {Number(totals.tax).toFixed(2)}</strong></div><div style={{display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: "bold", color: "var(--acc)", paddingTop: 8, borderTop: "1px solid var(--rim)"}}><span>TOTAL:</span><strong>R {Number(totals.total).toFixed(2)}</strong></div></div><div style={{display: "flex", gap: 8}}><button className="btn bp bsm" onClick={saveInvoice}>Save</button><button className="btn bg2 bsm" onClick={() => {setShowForm(false); resetForm();}}>Cancel</button></div></div>)}{filtered.length === 0 ? (<div className="empty"><div className="ei">📄</div><div>No invoices</div></div>) : (<div className="cg">{filtered.map(inv => {const cl = clients.find(c => c.id === inv.clientId); return (<div key={inv.id} className="card"><div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10}}><div><div style={{fontWeight: 700, fontSize: 14}}>{inv.number}</div><div style={{fontSize: 11, color: "var(--mu)", marginTop: 2}}>{cl?.name}</div></div><div style={{display: "flex", gap: 5}}><span className="bdg" style={{background: inv.status === "Paid" ? "rgba(46,204,138,.15)" : inv.status === "Sent" ? "rgba(240,160,48,.15)" : "rgba(107,114,128,.15)", color: inv.status === "Paid" ? "var(--grn)" : inv.status === "Sent" ? "var(--amb)" : "var(--mu)", fontSize: 10}}>{inv.status}</span>{inv.deliveryDate && <span className="bdg" style={{background: "rgba(46,204,138,.15)", color: "var(--grn)", fontSize: 10}}>✓ Delivered</span>}</div></div><div className="crow"><span className="crl">Amount</span><span className="crv">R {Number(inv.total || 0).toFixed(2)}</span></div><div className="crow"><span className="crl">Date</span><span className="crv">{fmtD(inv.createdAt)}</span></div>{inv.paidDate && <div className="crow"><span className="crl">Paid</span><span className="crv" style={{color: "var(--grn)"}}>{fmtD(inv.paidDate)}</span></div>}<div className="cacts" style={{marginTop: 8}}><button className="btn bg2 bxs" onClick={() => generateInvoicePDF(inv)}>📄 PDF</button><button className="btn bg2 bxs" onClick={() => generateDeliveryNotePDF(inv)}>📦 Note</button><button className="btn bg2 bxs" onClick={() => sendInvoiceEmail(inv)}>✉️ Email</button>{inv.status !== "Paid" && <button className="btn bg2 bxs" onClick={() => markAsPaid(inv.id)}>✓ Paid</button>}{!inv.deliveryDate && <button className="btn bg2 bxs" onClick={() => markAsDelivered(inv.id)}>✓ Delivered</button>}</div></div>);})}</div>)}</>)}{tab === "reports" && (<><div className="sg" style={{marginBottom: 16}}>{[{title: "Revenue", value: "R " + Number(invoices.reduce((s, i) => s + i.total, 0)).toFixed(0), icon: "💰"},{title: "Outstanding", value: "R " + Number(invoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.total, 0)).toFixed(0), icon: "⏳"},{title: "Avg Invoice", value: "R " + Number(invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0).toFixed(0), icon: "📊"},{title: "Overdue", value: invoices.filter(i => i.status !== "Paid" && new Date(i.dueDate || new Date(i.createdAt).getTime() + i.paymentTerms * 86400000) < new Date()).length, icon: "🚨"}].map((s, i) => (<div className="sc" key={i}><div style={{fontSize: 20, marginBottom: 5}}>{s.icon}</div><div className="sc-n">{s.value}</div><div className="sc-l">{s.title}</div></div>))}</div><div className="sect">By Client<span/></div><div className="tw"><table><thead><tr><th>Client</th><th>Invoices</th><th>Total</th><th>Paid</th></tr></thead><tbody>{clients.map(c => {const cinv = invoices.filter(i => i.clientId === c.id); const paid = cinv.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0); return (<tr key={c.id}><td>{c.name}</td><td>{cinv.length}</td><td>R {Number(cinv.reduce((s, i) => s + i.total, 0)).toFixed(2)}</td><td style={{color: "var(--grn)"}}>R {Number(paid).toFixed(2)}</td></tr>);})}</tbody></table></div></>)}</> );
 }
 
 function generatePDF(content, filename) {
