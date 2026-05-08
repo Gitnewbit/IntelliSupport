@@ -46,7 +46,7 @@ const TECH_SPECS = ["IT Support","Copier/Printers","CCTV","PABX","Networking","A
 
 // ─── HELPERS ──────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2,8);
-const generateTicketId = () => {const now = new Date(); const yr = now.getFullYear(); const mo = String(now.getMonth() + 1).padStart(2, "0"); const dy = String(now.getDate()).padStart(2, "0"); const dateStr = `${yr}${mo}${dy}`; const rand = Math.random().toString(36).slice(2, 10).toUpperCase(); return `TK${dateStr}${rand}`.slice(0, 10);};
+const generateTicketId = () => {const now = new Date(); const yr = now.getFullYear(); const mo = String(now.getMonth() + 1).padStart(2, "0"); const dy = String(now.getDate()).padStart(2, "0"); const dateStr = `${yr}${mo}${dy}`; const rand = Math.random().toString(36).slice(2, 15).toUpperCase().replace(/[^A-Z0-9]/g, ''); return `TK${dateStr}${rand}`.substring(0, 15);};
 
 const nowISO = () => new Date().toISOString();
 const fmt = iso => { if(!iso) return "—"; const d=new Date(iso); return d.toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"})+" "+d.toLocaleTimeString("en-ZA",{hour:"2-digit",minute:"2-digit"}); };
@@ -520,7 +520,7 @@ if (!profile) {
       </main>
 
       {detail&&<TicketDetail ticket={tickets.find(t=>t.id===detail.id)||detail} tickets={tickets} clients={clients} devices={devices} users={users} user={profile} isTech={isTech} isCtrl={isCtrl} isMgr={isMgr} slaMeta={slaMeta} settings={settings} onClose={()=>setDetail(null)} patchTicket={patchTicket} addDevEv={addDevEv}/>}
-      {modal==="new-ticket"&&<NewTicketModal clients={clients} devices={devices} users={users} user={profile} onClose={()=>setModal(null)} onSave={async d=>{await createTicket(d);setModal(null);}}/>}
+      {modal==="new-ticket"&&<NewTicketModal clients={clients} devices={devices} users={users} user={profile} slaMeta={slaMeta} onClose={()=>setModal(null)} onSave={async d=>{await createTicket(d);setModal(null);}}/>}
       {partsDetailModal&&<PartsDetailModal part={partsDetailModal} tickets={tickets} patchTicket={patchTicket} isCtrl={isCtrl} onClose={()=>setPartsDetailModal(null)} onMarkArrived={async(ticketId,partId)=>{const t=tickets.find(x=>x.id===ticketId);if(!t)return;const updated=(t.parts||[]).map(p=>p.id===partId?{...p,status:"Arrived",arrived:nowISO()}:p);await patchTicket(ticketId,{parts:updated},{action:"part_arrived",note:`Part arrived: ${partsDetailModal.name}`},{toRole:ROLES.CONTROLLER,toId:null,msg:`📬 Part arrived for ${ticketId}: ${partsDetailModal.name}`});setPartsDetailModal(null);}}/>}
     </div>
   );
@@ -832,8 +832,12 @@ function TicketDetail({ticket,tickets,clients,devices,users,user,isTech,isCtrl,i
   const [monoReading,setMonoReading]=useState(ticket.monoReading||"");
   const [colourLargeReading,setColourLargeReading]=useState(ticket.colourLargeReading||"");
   const [monoLargeReading,setMonoLargeReading]=useState(ticket.monoLargeReading||"");
+  const [photos,setPhotos]=useState(ticket.photos||[]);
+  const photoInputRef=useRef();
   const ddRef=useRef();
   useEffect(()=>{const h=e=>{if(ddRef.current&&!ddRef.current.contains(e.target))setDdOpen(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
+  
+  const handlePhotoUpload=async(e)=>{const files=e.target.files; if(!files)return; for(let file of files){const reader=new FileReader(); reader.onload=async(evt)=>{const base64=evt.target.result; const newPhotos=[...photos,{id:uid(),data:base64,timestamp:nowISO()}]; setPhotos(newPhotos); await patchTicket(ticket.id,{photos:newPhotos},{action:"note",note:`Photo added`});}; reader.readAsDataURL(file);};};
 
   const cl=clients.find(c=>c.id===ticket.clientId);
   const dev=devices.find(d=>d.id===ticket.deviceId);
@@ -1100,7 +1104,7 @@ function TicketDetail({ticket,tickets,clients,devices,users,user,isTech,isCtrl,i
 }
 
 // ── NEW TICKET MODAL ──────────────────────────────────────────
-function NewTicketModal({clients,devices,users,user,onClose,onSave}){
+function NewTicketModal({clients,devices,users,user,onClose,onSave,slaMeta}){
   const [f,setF]=useState({type:"IT",category:"Hardware",priority:"High",status:"Open",title:"",description:"",reporter:"",clientId:"",deviceId:"",techId:"",errorCode:"",brand:"",model:"",serial:""});
   const [busy,setBusy]=useState(false);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
@@ -1108,6 +1112,8 @@ function NewTicketModal({clients,devices,users,user,onClose,onSave}){
   const cDevs=devices.filter(d=>d.clientId===f.clientId&&d.type===f.type);
   const techs=users.filter(u=>u.role===ROLES.TECHNICIAN&&u.active);
   const ok=f.title.trim()&&f.clientId;
+  const selClient=clients.find(c=>c.id===f.clientId);
+  const clientSLA=selClient?.sla||"None";
   function pickDev(id){const d=devices.find(x=>x.id===id);setF(p=>({...p,deviceId:id,brand:d?.brand||p.brand,model:d?.model||p.model,serial:d?.serial||p.serial}));}
   async function submit(){setBusy(true);await onSave({...f,createdBy:user.id,controllerId:user.id});setBusy(false);}
   return(
@@ -1126,6 +1132,9 @@ function NewTicketModal({clients,devices,users,user,onClose,onSave}){
             </select></Fld>
             <Fld label="Reporter"><input className="inp" value={f.reporter} onChange={e=>s("reporter",e.target.value)} placeholder="Contact person"/></Fld>
           </div>
+          {f.clientId&&<div style={{background:"var(--s2)",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12}}>
+            <div style={{fontWeight:600,marginBottom:4}}>Client SLA: {clientSLA==="None"?<span style={{color:"var(--mu)"}}>No SLA</span>:<><span style={{color:"var(--acc)"}}>★ {clientSLA}</span> {slaMeta[clientSLA]&&<span style={{color:"var(--mu)"}}> • Response: {slaMeta[clientSLA].respH}h • Resolution: {slaMeta[clientSLA].resH}h</span>}</> }</div>
+          </div>}
           <div className="fr3">
             <Fld label="Priority"><select className="sel" value={f.priority} onChange={e=>s("priority",e.target.value)}>{pris.map(p=><option key={p}>{p}</option>)}</select></Fld>
             <Fld label="Status"><select className="sel" value={f.status} onChange={e=>s("status",e.target.value)}>{STATUSES.map(x=><option key={x}>{x}</option>)}</select></Fld>
