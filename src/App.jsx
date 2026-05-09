@@ -46,7 +46,32 @@ const TECH_SPECS = ["IT Support","Copier/Printers","CCTV","PABX","Networking","A
 
 // ─── HELPERS ──────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2,8);
-const generateTicketId = () => {const now = new Date(); const yr = now.getFullYear(); const mo = String(now.getMonth() + 1).padStart(2, "0"); const dy = String(now.getDate()).padStart(2, "0"); const dateStr = `${yr}${mo}${dy}`; const rand = Math.random().toString(36).slice(2, 15).toUpperCase().replace(/[^A-Z0-9]/g, ''); return `TK${dateStr}${rand}`.substring(0, 15);};
+
+// ════ ANALYTICS & PHOTO HELPERS ════
+const getPaymentAnalytics = (invoices) => {const total = invoices.reduce((s, i) => s + i.total, 0); const paid = invoices.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0); const unpaid = total - paid; const avg = invoices.length > 0 ? total / invoices.length : 0; return {total, paid, unpaid, avg, count: invoices.length};};
+
+const getRevenueTrends = (invoices) => {const trends = {weekly: {}, monthly: {}, yearly: {}}; invoices.forEach(inv => {const d = new Date(inv.createdAt); const week = `W${Math.ceil(d.getDate()/7)}-${d.getMonth()+1}`; const month = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; const year = d.getFullYear(); trends.weekly[week] = (trends.weekly[week] || 0) + inv.total; trends.monthly[month] = (trends.monthly[month] || 0) + inv.total; trends.yearly[year] = (trends.yearly[year] || 0) + inv.total;}); return trends;};
+
+const getCostAnalysis = (tickets, clients, devices, parts) => {const analysis = {}; tickets.forEach(t => {const clientName = clients.find(c => c.id === t.clientId)?.name || 'Unknown'; const deviceId = t.deviceId; const key = `${clientName}`; if (!analysis[key]) analysis[key] = {client: clientName, cost: 0, tickets: 0, labour: 0}; analysis[key].labour += (t.labourHours || 0) * 950; analysis[key].cost += (t.labourHours || 0) * 950; t.parts?.forEach(p => {const part = parts.find(x => x.id === p.partId); if (part) analysis[key].cost += (p.qty || 1) * (part.cost || 50);}); analysis[key].tickets++;}); return Object.values(analysis);};
+
+const getTechnicianMetrics = (tickets, users) => {const metrics = {}; tickets.forEach(t => {if (!t.techId) return; if (!metrics[t.techId]) metrics[t.techId] = {name: users.find(u => u.id === t.techId)?.name || 'Unknown', completed: 0, inProgress: 0, avgTime: 0, totalHours: 0}; if (['Resolved', 'Closed'].includes(t.status)) metrics[t.techId].completed++; else if (t.status !== 'Open') metrics[t.techId].inProgress++; metrics[t.techId].totalHours += t.labourHours || 0;}); Object.keys(metrics).forEach(k => {if (metrics[k].completed > 0) metrics[k].avgTime = (metrics[k].totalHours / metrics[k].completed).toFixed(1);}); return Object.values(metrics);};
+
+const getPartsInventoryCost = (parts) => {return parts.reduce((s, p) => s + ((p.cost || 50) * (p.stock || 0)), 0);};
+
+const getProfitabilityPerService = (tickets, invoices) => {const profitability = {}; tickets.forEach(t => {const serviceType = t.serviceType || 'General Service'; if (!profitability[serviceType]) profitability[serviceType] = {type: serviceType, revenue: 0, cost: 0, tickets: 0}; const inv = invoices.find(i => i.ticketId === t.id); if (inv) profitability[serviceType].revenue += inv.total; profitability[serviceType].cost += (t.labourHours || 0) * 950; profitability[serviceType].tickets++;}); Object.keys(profitability).forEach(k => {profitability[k].profit = profitability[k].revenue - profitability[k].cost; profitability[k].margin = profitability[k].revenue > 0 ? (profitability[k].profit / profitability[k].revenue * 100).toFixed(2) : 0;}); return Object.values(profitability);};
+
+const generateTicketId = () => {
+  const now = new Date();
+  const yr = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, "0");
+  const dy = String(now.getDate()).padStart(2, "0");
+  const dateStr = `${yr}${mo}${dy}`;
+  // Use millisecond timestamp + random to guarantee uniqueness
+  const ms = Date.now().toString(36).toUpperCase().slice(-3);
+  const r1 = Math.random().toString(36).slice(2, 5).toUpperCase();
+  const r2 = Math.floor(Math.random() * 100).toString().padStart(2, "0");
+  return `TK${dateStr}${ms}${r1}${r2}`.replace(/[^A-Z0-9]/g, "").slice(0, 16);
+};
 
 const nowISO = () => new Date().toISOString();
 const fmt = iso => { if(!iso) return "—"; const d=new Date(iso); return d.toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"})+" "+d.toLocaleTimeString("en-ZA",{hour:"2-digit",minute:"2-digit"}); };
@@ -303,6 +328,8 @@ function App() {
   const [invoices,setInvoices] = useState([]);
   const [showNewInvoice,setShowNewInvoice] = useState(false);
   const [selectedInvoice,setSelectedInvoice] = useState(null);
+  const [contracts,setContracts] = useState([]);
+  const [purchaseOrders,setPurchaseOrders] = useState([]);
 
   // Firebase Auth
 useEffect(() => {
@@ -348,6 +375,8 @@ useEffect(() => {
       FS.sub("tickets",  d => setTickets(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
       FS.sub("parts",    d => setParts(d)),
       FS.sub("invoices", d => setInvoices(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
+      FS.sub("contracts",d => setContracts(d)),
+      FS.sub("purchase_orders", d => setPurchaseOrders(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
     ];
     FS.get("settings","main").then(s=>{ if(s) setSettings(s); });
     return ()=>subs.forEach(u=>u());
@@ -449,12 +478,13 @@ if (!profile) {
     {grp:"Overview",items:[{id:"dashboard",ic:"📊",label:"Dashboard"}]},
     {grp:"Tickets",items:[{id:"tickets",ic:"🎫",label:"All Tickets",badge:tickets.length,bc:"rgba(0,194,255,.18)",btc:"var(--acc)"},{id:"parts",ic:"🔧",label:"Parts & Orders",badge:(partsHold+partsArr)||null,bc:"rgba(240,80,96,.18)",btc:"var(--red)"}]},
     {grp:"Assets",items:[{id:"yield",ic:"📊",label:"Consumable Yield"},{id:"clients",ic:"🏢",label:"Clients"},{id:"devices",ic:"🖥️",label:"Devices"}]},
-    {grp:"Finance",items:[{id:"billing",ic:"💰",label:"Billing & Invoices"}]},
+    {grp:"Finance",items:[{id:"billing",ic:"💰",label:"Billing & Invoices"},{id:"analytics",ic:"📈",label:"Analytics"}]},
+    {grp:"Operations",items:[{id:"portal",ic:"🌐",label:"Client Portal"},{id:"contracts",ic:"📋",label:"SLA Contracts"},{id:"purchase_orders",ic:"📦",label:"Purchase Orders"},{id:"device_health",ic:"❤️",label:"Device Health"}]},
     ...(isMgr?[{grp:"Admin",items:[{id:"team",ic:"👷",label:"Team"},{id:"performance",ic:"🏆",label:"Performance"},{id:"stats",ic:"📈",label:"Stats & KPIs"},{id:"settings",ic:"⚙️",label:"Settings"}]}]:[]),
   ];
 
   const goto = id => { setPage(id); setSb(false); };
-  const pageLabels = {dashboard:"Dashboard",tickets:isTech?"My Calls":"All Tickets",parts:"Parts & Orders",yield:"Consumable Yield",clients:"Clients",devices:"Devices",team:"Team",performance:"Performance",stats:"Stats & KPIs",billing:"Billing & Invoices",settings:"Settings"};
+  const pageLabels = {dashboard:"Dashboard",tickets:isTech?"My Calls":"All Tickets",parts:"Parts & Orders",yield:"Consumable Yield",clients:"Clients",devices:"Devices",team:"Team",performance:"Performance",stats:"Stats & KPIs",billing:"Billing & Invoices",analytics:"Analytics",portal:"Client Portal",contracts:"SLA Contracts",purchase_orders:"Purchase Orders",device_health:"Device Health",settings:"Settings"};
 
   return (
     <div className="shell">
@@ -504,6 +534,11 @@ if (!profile) {
           {!isTech&&page==="clients"&&<ClientsPage clients={clients} devices={devices} tickets={tickets} isCtrl={isCtrl} slaMeta={slaMeta}/>}
           {!isTech&&page==="devices"&&<DevicesPage devices={devices} clients={clients} tickets={tickets} isCtrl={isCtrl} addDevEv={addDevEv}/>}
           {(isCtrl||isMgr)&&page==="billing"&&<BillingPage invoices={invoices} setInvoices={setInvoices} tickets={tickets} clients={clients} users={users} profile={profile} isCtrl={isCtrl} isMgr={isMgr}/>}
+          {(isCtrl||isMgr)&&page==="analytics"&&<AnalyticsPage invoices={invoices} tickets={tickets} clients={clients} devices={devices} parts={parts} users={users}/>}
+          {(isCtrl||isMgr)&&page==="portal"&&<ClientPortalPage clients={clients} tickets={tickets} devices={devices} invoices={invoices} users={users}/>}
+          {(isCtrl||isMgr)&&page==="contracts"&&<SLAContractsPage clients={clients} slaMeta={slaMeta} profile={profile} isCtrl={isCtrl} contracts={contracts}/>}
+          {(isCtrl||isMgr)&&page==="purchase_orders"&&<PurchaseOrdersPage parts={parts} profile={profile} isCtrl={isCtrl} purchaseOrders={purchaseOrders}/>}
+          {(isCtrl||isMgr)&&page==="device_health"&&<DeviceHealthPage devices={devices} tickets={tickets} clients={clients} parts={parts}/>}
           {isMgr&&page==="team"&&<TeamPage users={users} addUser={addUser} tickets={tickets}/>}
           {isMgr&&page==="performance"&&<PerformancePage tickets={tickets} users={users} settings={settings}/>}
           {isMgr&&page==="stats"&&<StatsPage tickets={tickets} clients={clients} users={users} slaMeta={slaMeta}/>}
@@ -935,7 +970,7 @@ function TicketDetail({ticket,tickets,clients,devices,users,user,isTech,isCtrl,i
           <XBtn onClick={onClose}/>
         </div>
         <div className="tabs" style={{margin:"12px 16px 0"}}>
-          {["details","history","parts"].map(t=><button key={t} className={`tab ${tab===t?"on":""}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}{t==="parts"&&(ticket.parts||[]).length>0?` (${ticket.parts.length})`:""}</button>)}
+          {["details","history","parts","photos"].map(t=><button key={t} className={`tab ${tab===t?"on":""}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}{t==="parts"&&(ticket.parts||[]).length>0?` (${ticket.parts.length})`:""}{t==="photos"&&photos.length>0?` (${photos.length})`:""}</button>)}
         </div>
         <div className="mbody" style={{paddingTop:10}}>
 
@@ -1096,6 +1131,30 @@ function TicketDetail({ticket,tickets,clients,devices,users,user,isTech,isCtrl,i
                 <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={addPart}>Save</button><button className="btn bg2 bsm" onClick={()=>{setShowPF(false);setEarlyWarn(null);}}>Cancel</button></div>
               </div>}
             </>}
+          </>}
+
+          {tab==="photos"&&<>
+            <input ref={photoInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={handlePhotoUpload}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontSize:12,color:"var(--mu2)"}}>{photos.length} photo{photos.length!==1?"s":""} attached</div>
+              {!isClosed&&<button className="btn bp bsm" onClick={()=>photoInputRef.current?.click()}>📷 Add Photos</button>}
+            </div>
+            {photos.length===0
+              ?<div className="empty"><div className="ei">📷</div><div>No photos yet</div><div style={{fontSize:12,color:"var(--mu)",marginTop:6}}>Attach before/after photos, error screens, or damage documentation</div></div>
+              :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
+                {photos.map((ph,i)=>(
+                  <div key={ph.id||i} style={{position:"relative",borderRadius:10,overflow:"hidden",border:"1px solid var(--rim)",background:"var(--s2)"}}>
+                    <img src={ph.data} alt={`Photo ${i+1}`} style={{width:"100%",height:130,objectFit:"cover",display:"block"}}/>
+                    <div style={{padding:"6px 8px",fontSize:10,color:"var(--mu)"}}>
+                      {ph.timestamp?fmtD(ph.timestamp):"—"}
+                    </div>
+                    {!isClosed&&<button
+                      style={{position:"absolute",top:4,right:4,background:"rgba(0,0,0,.6)",border:"none",borderRadius:5,color:"#fff",fontSize:12,padding:"2px 6px",cursor:"pointer"}}
+                      onClick={async()=>{const np=photos.filter((_,j)=>j!==i);setPhotos(np);await patchTicket(ticket.id,{photos:np},{action:"note",note:"Photo removed"});}}
+                    >✕</button>}
+                  </div>
+                ))}
+              </div>}
           </>}
         </div>
       </div>
@@ -1365,7 +1424,13 @@ function DevicesPage({devices,clients,tickets,isCtrl,addDevEv}){
   const list=tab==="All"?devices:devices.filter(d=>d.type===tab);
   const filtered=list.filter(d=>!q||d.brand.toLowerCase().includes(q.toLowerCase())||d.model.toLowerCase().includes(q.toLowerCase())||d.serial?.toLowerCase().includes(q.toLowerCase()));
   const openT=id=>tickets.filter(t=>t.deviceId===id&&!["Closed"].includes(t.status)).length;
-  
+  const selClient=clients.find(c=>c.id===f.clientId);
+
+  function pickClient(id){
+    const cl=clients.find(c=>c.id===id);
+    setF(p=>({...p,clientId:id,sla:cl?.hasSLA&&cl?.sla&&cl?.sla!=="None"?cl.sla:p.sla}));
+  }
+
   async function saveDev(){
     if(!f.clientId||!f.brand.trim()||!f.model.trim())return;
     const id=editId||("dv"+uid());
@@ -1383,9 +1448,33 @@ function DevicesPage({devices,clients,tickets,isCtrl,addDevEv}){
       </div>
       {showForm&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:10,padding:14,marginBottom:12,display:"flex",flexDirection:"column",gap:10}}>
         <div style={{fontWeight:700,fontSize:14}}>{editId?"Edit Device":"Add Device"}</div>
-        <div className="fr2"><Fld label="Client *"><select className="sel" value={f.clientId} onChange={e=>s("clientId",e.target.value)}><option value="">— Select —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Fld><Fld label="Type"><select className="sel" value={f.type} onChange={e=>s("type",e.target.value)}>{TICKET_TYPES.map(t=><option key={t}>{t}</option>)}</select></Fld></div>
+        <div className="fr2">
+          <Fld label="Client *">
+            <select className="sel" value={f.clientId} onChange={e=>pickClient(e.target.value)}>
+              <option value="">— Select —</option>
+              {clients.map(c=><option key={c.id} value={c.id}>{c.name}{c.walkIn?" (Walk-in)":""}</option>)}
+            </select>
+          </Fld>
+          <Fld label="Type"><select className="sel" value={f.type} onChange={e=>s("type",e.target.value)}>{TICKET_TYPES.map(t=><option key={t}>{t}</option>)}</select></Fld>
+        </div>
+        {f.clientId&&<div style={{background:"var(--s2)",border:"1px solid var(--rim)",borderRadius:8,padding:"9px 13px",fontSize:12,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontWeight:600}}>Client SLA:</span>
+          {selClient?.hasSLA&&selClient?.sla&&selClient?.sla!=="None"
+            ?<><span style={{color:"var(--acc)",fontWeight:700}}>★ {selClient.sla}</span><span style={{color:"var(--mu2)"}}> · Response: {INIT_SLA[selClient.sla]?.respH||"—"}h · Resolution: {INIT_SLA[selClient.sla]?.resH||"—"}h</span></>
+            :<span style={{color:"var(--mu)"}}>No SLA</span>}
+          {selClient?.vatNumber&&<span style={{marginLeft:"auto",color:"var(--mu)",fontSize:11}}>VAT: {selClient.vatNumber}</span>}
+        </div>}
         <div className="fr2"><Fld label="Brand *"><input className="inp" value={f.brand} onChange={e=>s("brand",e.target.value)}/></Fld><Fld label="Model *"><input className="inp" value={f.model} onChange={e=>s("model",e.target.value)}/></Fld></div>
-        <div className="fr3"><Fld label="Serial"><input className="inp" value={f.serial} onChange={e=>s("serial",e.target.value)}/></Fld><Fld label="SLA"><select className="sel" value={f.sla} onChange={e=>s("sla",e.target.value)}>{SLA_TIERS.map(t=><option key={t}>{t}</option>)}</select></Fld><Fld label="Location"><input className="inp" value={f.location} onChange={e=>s("location",e.target.value)}/></Fld></div>
+        <div className="fr3">
+          <Fld label="Serial"><input className="inp" value={f.serial} onChange={e=>s("serial",e.target.value)}/></Fld>
+          <Fld label="Device SLA Override">
+            <select className="sel" value={f.sla} onChange={e=>s("sla",e.target.value)}>
+              <option value="None">None</option>
+              {SLA_TIERS.map(t=><option key={t}>{t}</option>)}
+            </select>
+          </Fld>
+          <Fld label="Location"><input className="inp" value={f.location} onChange={e=>s("location",e.target.value)}/></Fld>
+        </div>
         <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={saveDev}>{editId?"Save":"Add"}</button><button className="btn bg2 bsm" onClick={()=>{setShowForm(false);setEditId(null);}}>Cancel</button></div>
       </div>}
       <div className="tw">
@@ -1600,6 +1689,701 @@ function BillingPage({invoices, setInvoices, tickets, clients, users, profile, i
   const sendInvoiceEmail = async (inv) => {const client = clients.find(c => c.id === inv.clientId); if (!client?.email) { alert("No email on file"); return; } alert(`Email would be sent to: ${client.email}\n\nSubject: Invoice ${inv.number} - IntelliSupport`);};
   const filtered = invoices.filter(i => {const matchTerm = !searchTerm || i.number?.includes(searchTerm) || clients.find(c => c.id === i.clientId)?.name.toLowerCase().includes(searchTerm.toLowerCase()); const matchStatus = filterStatus === "All" || i.status === filterStatus; const matchPayment = paymentFilter === "All" || (paymentFilter === "Paid" && i.status === "Paid") || (paymentFilter === "Unpaid" && i.status !== "Paid"); return matchTerm && matchStatus && matchPayment;});
   return (<><div className="tabs" style={{marginBottom: 12}}><button className={`tab ${tab === "invoices" ? "on" : ""}`} onClick={() => setTab("invoices")}>📄 Invoices</button><button className={`tab ${tab === "reports" ? "on" : ""}`} onClick={() => setTab("reports")}>📊 Reports</button></div>{tab === "invoices" && (<><div className="sg" style={{marginBottom: 12}}>{[{n: invoices.length, l: "Total", c: "var(--blue)"},{n: invoices.filter(i => i.status === "Draft").length, l: "Draft", c: "var(--mu)"},{n: invoices.filter(i => i.status === "Sent").length, l: "Sent", c: "var(--amb)"},{n: invoices.filter(i => i.status === "Paid").length, l: "Paid", c: "var(--grn)"},{n: "R " + Number(invoices.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0)).toFixed(0), l: "Revenue", c: "var(--acc)"}].map(s => (<div className="sc" key={s.l}><div className="sc-n" style={{color: s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>))}</div><div className="frow" style={{marginBottom: 12, gap: 10}}><div className="sw"><span className="sic">🔍</span><input className="sinp" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div><select className="fsl" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option>All Status</option><option>Draft</option><option>Sent</option><option>Paid</option></select><select className="fsl" value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)}><option>All Payments</option><option>Paid</option><option>Unpaid</option></select>{isCtrl && <button className="btn bp bsm" onClick={() => {setShowForm(true); setEditId(null); resetForm();}}>+ Invoice</button>}</div>{showForm && (<div style={{background: "var(--s1)", border: "1px solid var(--rim)", borderRadius: 10, padding: 14, marginBottom: 12}}><div style={{fontWeight: 700, fontSize: 14, marginBottom: 12}}>Create Invoice</div><div className="fr2" style={{marginBottom: 10}}><div className="fi"><label>Client *</label><select className="sel" value={f.clientId} onChange={e => s("clientId", e.target.value)}><option value="">— Select —</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div><div className="fi"><label>Ticket</label><select className="sel" value={f.ticketId} onChange={e => s("ticketId", e.target.value)}><option value="">— None —</option>{tickets.map(t => <option key={t.id} value={t.id}>{t.id}</option>)}</select></div></div><div style={{background: "var(--s2)", borderRadius: 9, padding: 12, marginBottom: 10}}><div style={{fontWeight: 600, fontSize: 12, marginBottom: 8}}>Items</div>{f.lineItems.map((li, i) => (<div key={i} className="fr3" style={{marginBottom: 8, gap: 8}}><input className="inp" placeholder="Description" value={li.description || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].description = e.target.value; s("lineItems", nli);}}/><input className="inp" type="number" placeholder="Qty" value={li.qty || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].qty = +e.target.value; s("lineItems", nli);}}/><input className="inp" type="number" placeholder="Rate" value={li.rate || ""} onChange={e => {const nli = [...f.lineItems]; nli[i].rate = +e.target.value; s("lineItems", nli);}}/></div>))}<button className="btn bg2 bxs" onClick={() => s("lineItems", [...f.lineItems, {description: "", qty: 1, rate: 0}])}>+ Item</button></div><div className="fr3" style={{marginBottom: 10}}><div className="fi"><label>Labour Hours</label><input className="inp" type="number" step="0.5" value={f.labourHours} onChange={e => s("labourHours", +e.target.value)}/></div><div className="fi"><label>Rate/Hr</label><input className="inp" type="number" value={f.labourRate} onChange={e => s("labourRate", +e.target.value)}/></div><div className="fi" style={{marginTop: "auto"}}><label style={{color: "var(--mu)"}}>= R {Number(f.labourHours * f.labourRate).toFixed(2)}</label></div></div><div className="fr3" style={{marginBottom: 10}}><div className="fi"><label>Travel (km)</label><input className="inp" type="number" step="0.1" value={f.travelKm} onChange={e => s("travelKm", +e.target.value)}/></div><div className="fi"><label>Rate/km</label><input className="inp" type="number" value={f.travelRate} onChange={e => s("travelRate", +e.target.value)}/></div><div className="fi" style={{marginTop: "auto"}}><label style={{color: "var(--mu)"}}>= R {Number(f.travelKm * f.travelRate).toFixed(2)}</label></div></div><div className="fi" style={{marginBottom: 10}}><label>Discount</label><input className="inp" type="number" value={f.discount} onChange={e => s("discount", +e.target.value)}/></div><div style={{background: "var(--s2)", borderRadius: 9, padding: 12, marginBottom: 10, fontSize: 12}}><div style={{display: "flex", justifyContent: "space-between", marginBottom: 5}}><span>Subtotal:</span><strong>R {Number(totals.subtotal).toFixed(2)}</strong></div><div style={{display: "flex", justifyContent: "space-between", marginBottom: 5}}><span>Tax (15%):</span><strong>R {Number(totals.tax).toFixed(2)}</strong></div><div style={{display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: "bold", color: "var(--acc)", paddingTop: 8, borderTop: "1px solid var(--rim)"}}><span>TOTAL:</span><strong>R {Number(totals.total).toFixed(2)}</strong></div></div><div style={{display: "flex", gap: 8}}><button className="btn bp bsm" onClick={saveInvoice}>Save</button><button className="btn bg2 bsm" onClick={() => {setShowForm(false); resetForm();}}>Cancel</button></div></div>)}{filtered.length === 0 ? (<div className="empty"><div className="ei">📄</div><div>No invoices</div></div>) : (<div className="cg">{filtered.map(inv => {const cl = clients.find(c => c.id === inv.clientId); return (<div key={inv.id} className="card"><div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10}}><div><div style={{fontWeight: 700, fontSize: 14}}>{inv.number}</div><div style={{fontSize: 11, color: "var(--mu)", marginTop: 2}}>{cl?.name}</div></div><div style={{display: "flex", gap: 5}}><span className="bdg" style={{background: inv.status === "Paid" ? "rgba(46,204,138,.15)" : inv.status === "Sent" ? "rgba(240,160,48,.15)" : "rgba(107,114,128,.15)", color: inv.status === "Paid" ? "var(--grn)" : inv.status === "Sent" ? "var(--amb)" : "var(--mu)", fontSize: 10}}>{inv.status}</span>{inv.deliveryDate && <span className="bdg" style={{background: "rgba(46,204,138,.15)", color: "var(--grn)", fontSize: 10}}>✓ Delivered</span>}</div></div><div className="crow"><span className="crl">Amount</span><span className="crv">R {Number(inv.total || 0).toFixed(2)}</span></div><div className="crow"><span className="crl">Date</span><span className="crv">{fmtD(inv.createdAt)}</span></div>{inv.paidDate && <div className="crow"><span className="crl">Paid</span><span className="crv" style={{color: "var(--grn)"}}>{fmtD(inv.paidDate)}</span></div>}<div className="cacts" style={{marginTop: 8}}><button className="btn bg2 bxs" onClick={() => generateInvoicePDF(inv)}>📄 PDF</button><button className="btn bg2 bxs" onClick={() => generateDeliveryNotePDF(inv)}>📦 Note</button><button className="btn bg2 bxs" onClick={() => sendInvoiceEmail(inv)}>✉️ Email</button>{inv.status !== "Paid" && <button className="btn bg2 bxs" onClick={() => markAsPaid(inv.id)}>✓ Paid</button>}{!inv.deliveryDate && <button className="btn bg2 bxs" onClick={() => markAsDelivered(inv.id)}>✓ Delivered</button>}</div></div>);})}</div>)}</>)}{tab === "reports" && (<><div className="sg" style={{marginBottom: 16}}>{[{title: "Revenue", value: "R " + Number(invoices.reduce((s, i) => s + i.total, 0)).toFixed(0), icon: "💰"},{title: "Outstanding", value: "R " + Number(invoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.total, 0)).toFixed(0), icon: "⏳"},{title: "Avg Invoice", value: "R " + Number(invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0).toFixed(0), icon: "📊"},{title: "Overdue", value: invoices.filter(i => i.status !== "Paid" && new Date(i.dueDate || new Date(i.createdAt).getTime() + i.paymentTerms * 86400000) < new Date()).length, icon: "🚨"}].map((s, i) => (<div className="sc" key={i}><div style={{fontSize: 20, marginBottom: 5}}>{s.icon}</div><div className="sc-n">{s.value}</div><div className="sc-l">{s.title}</div></div>))}</div><div className="sect">By Client<span/></div><div className="tw"><table><thead><tr><th>Client</th><th>Invoices</th><th>Total</th><th>Paid</th></tr></thead><tbody>{clients.map(c => {const cinv = invoices.filter(i => i.clientId === c.id); const paid = cinv.filter(i => i.status === "Paid").reduce((s, i) => s + i.total, 0); return (<tr key={c.id}><td>{c.name}</td><td>{cinv.length}</td><td>R {Number(cinv.reduce((s, i) => s + i.total, 0)).toFixed(2)}</td><td style={{color: "var(--grn)"}}>R {Number(paid).toFixed(2)}</td></tr>);})}</tbody></table></div></>)}</> );
+}
+
+// ── ANALYTICS PAGE ────────────────────────────────────────────
+function AnalyticsPage({invoices, tickets, clients, devices, parts, users}) {
+  const [tab, setTab] = useState("payments");
+  const [revRange, setRevRange] = useState("monthly");
+
+  const pay = getPaymentAnalytics(invoices);
+  const trends = getRevenueTrends(invoices);
+  const costData = getCostAnalysis(tickets, clients, devices, parts);
+  const techData = getTechnicianMetrics(tickets, users);
+  const partsCost = getPartsInventoryCost(parts);
+  const profitData = getProfitabilityPerService(tickets, invoices);
+
+  const trendData = Object.entries(trends[revRange] || {}).sort(([a],[b])=>a.localeCompare(b)).slice(-12);
+  const maxTrend = Math.max(...trendData.map(([,v])=>v), 1);
+
+  const Bar = ({val, max, color="var(--acc)"}) => (
+    <div style={{flex:1, background:"var(--s2)", borderRadius:4, height:8, overflow:"hidden"}}>
+      <div style={{width:`${Math.max(2,(val/max)*100)}%`, height:"100%", background:color, borderRadius:4, transition:"width .4s"}}/>
+    </div>
+  );
+
+  const KPI = ({icon, label, value, sub, color="var(--acc)"}) => (
+    <div className="sc" style={{textAlign:"left", padding:"14px 16px"}}>
+      <div style={{fontSize:22, marginBottom:4}}>{icon}</div>
+      <div style={{fontSize:20, fontWeight:700, color}}>{value}</div>
+      <div style={{fontSize:11, color:"var(--mu2)", marginTop:2}}>{label}</div>
+      {sub&&<div style={{fontSize:10, color:"var(--mu)", marginTop:2}}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <>
+      <div className="tabs" style={{marginBottom:12}}>
+        {[["payments","💳 Payments"],["revenue","📈 Revenue Trends"],["clients","🏢 Cost by Client"],["technicians","👷 Technicians"],["parts","🔧 Inventory"],["profitability","💹 Profitability"]].map(([id,label])=>(
+          <button key={id} className={`tab ${tab===id?"on":""}`} onClick={()=>setTab(id)}>{label}</button>
+        ))}
+      </div>
+
+      {tab==="payments"&&<>
+        <div className="sg" style={{marginBottom:16}}>
+          <KPI icon="💰" label="Total Invoiced" value={`R ${Number(pay.total).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2})}`} color="var(--acc)"/>
+          <KPI icon="✅" label="Total Collected" value={`R ${Number(pay.paid).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2})}`} color="var(--grn)"/>
+          <KPI icon="⏳" label="Outstanding" value={`R ${Number(pay.unpaid).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2})}`} color="var(--amb)"/>
+          <KPI icon="📄" label="Avg Invoice" value={`R ${Number(pay.avg).toFixed(2)}`} sub={`${pay.count} invoices total`} color="var(--blue)"/>
+        </div>
+        <div className="sect">Payment Summary<span/></div>
+        <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:16,marginBottom:12}}>
+          {[
+            {label:"Collection Rate",val:pay.total>0?((pay.paid/pay.total)*100).toFixed(1):0,suffix:"%",color:"var(--grn)"},
+            {label:"Outstanding Rate",val:pay.total>0?((pay.unpaid/pay.total)*100).toFixed(1):0,suffix:"%",color:"var(--amb)"},
+          ].map(r=>(
+            <div key={r.label} style={{marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:13}}>
+                <span>{r.label}</span><strong style={{color:r.color}}>{r.val}{r.suffix}</strong>
+              </div>
+              <Bar val={Number(r.val)} max={100} color={r.color}/>
+            </div>
+          ))}
+        </div>
+        <div className="sect">Invoices by Status<span/></div>
+        <div className="tw"><table>
+          <thead><tr><th>Status</th><th>Count</th><th>Total Value</th><th>% of Revenue</th></tr></thead>
+          <tbody>
+            {["Draft","Sent","Paid"].map(st=>{
+              const sinv=invoices.filter(i=>i.status===st);
+              const stotal=sinv.reduce((s,i)=>s+i.total,0);
+              return(<tr key={st}><td><span className="bdg" style={{background:st==="Paid"?"rgba(46,204,138,.15)":st==="Sent"?"rgba(240,160,48,.15)":"rgba(107,114,128,.15)",color:st==="Paid"?"var(--grn)":st==="Sent"?"var(--amb)":"var(--mu)"}}>{st}</span></td>
+                <td>{sinv.length}</td>
+                <td>R {Number(stotal).toFixed(2)}</td>
+                <td>{pay.total>0?((stotal/pay.total)*100).toFixed(1):0}%</td>
+              </tr>);
+            })}
+          </tbody>
+        </table></div>
+      </>}
+
+      {tab==="revenue"&&<>
+        <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
+          <span style={{fontSize:13,color:"var(--mu2)"}}>View by:</span>
+          {["weekly","monthly","yearly"].map(r=>(
+            <button key={r} className={`tab ${revRange===r?"on":""}`} onClick={()=>setRevRange(r)} style={{fontSize:12,padding:"4px 12px"}}>{r.charAt(0).toUpperCase()+r.slice(1)}</button>
+          ))}
+        </div>
+        <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:16,marginBottom:12}}>
+          <div style={{fontWeight:600,fontSize:13,marginBottom:14}}>Revenue Trend — {revRange.charAt(0).toUpperCase()+revRange.slice(1)}</div>
+          {trendData.length===0
+            ?<div className="empty"><div className="ei">📈</div><div>No revenue data yet</div></div>
+            :<div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {trendData.map(([period, val])=>(
+                <div key={period} style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:90,fontSize:11,color:"var(--mu2)",textAlign:"right",flexShrink:0}}>{period}</div>
+                  <Bar val={val} max={maxTrend} color="var(--acc)"/>
+                  <div style={{width:100,fontSize:12,fontWeight:600,textAlign:"right",flexShrink:0}}>R {Number(val).toFixed(0)}</div>
+                </div>
+              ))}
+            </div>}
+        </div>
+        <div className="sg" style={{marginBottom:12}}>
+          <KPI icon="📅" label="This Month" value={`R ${Number(Object.entries(trends.monthly||{}).sort(([a],[b])=>b.localeCompare(a))[0]?.[1]||0).toFixed(0)}`} color="var(--acc)"/>
+          <KPI icon="📆" label="This Year" value={`R ${Number(Object.entries(trends.yearly||{}).sort(([a],[b])=>b-a)[0]?.[1]||0).toFixed(0)}`} color="var(--grn)"/>
+          <KPI icon="📊" label="Periods Tracked" value={trendData.length} color="var(--blue)"/>
+        </div>
+      </>}
+
+      {tab==="clients"&&<>
+        <div className="sect">Cost Analysis by Client<span/></div>
+        {costData.length===0
+          ?<div className="empty"><div className="ei">🏢</div><div>No cost data yet</div></div>
+          :<><div className="tw"><table>
+            <thead><tr><th>Client</th><th>Tickets</th><th>Labour Cost</th><th>Total Cost</th><th>Avg / Ticket</th></tr></thead>
+            <tbody>{costData.sort((a,b)=>b.cost-a.cost).map((c,i)=>(
+              <tr key={i}>
+                <td style={{fontWeight:600}}>{c.client}</td>
+                <td>{c.tickets}</td>
+                <td>R {Number(c.labour).toFixed(2)}</td>
+                <td style={{fontWeight:700,color:"var(--acc)"}}>R {Number(c.cost).toFixed(2)}</td>
+                <td>R {c.tickets>0?Number(c.cost/c.tickets).toFixed(2):"—"}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+          <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:16,marginTop:12}}>
+            <div style={{fontWeight:600,fontSize:13,marginBottom:12}}>Cost Distribution</div>
+            {costData.sort((a,b)=>b.cost-a.cost).slice(0,8).map((c,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{width:130,fontSize:12,color:"var(--mu2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.client}</div>
+                <Bar val={c.cost} max={Math.max(...costData.map(x=>x.cost),1)} color="var(--blue)"/>
+                <div style={{width:90,fontSize:12,fontWeight:600,textAlign:"right"}}>R {Number(c.cost).toFixed(0)}</div>
+              </div>
+            ))}
+          </div></>}
+      </>}
+
+      {tab==="technicians"&&<>
+        <div className="sect">Technician Productivity<span/></div>
+        {techData.length===0
+          ?<div className="empty"><div className="ei">👷</div><div>No technician data yet</div></div>
+          :<><div className="sg" style={{marginBottom:12}}>
+            <KPI icon="👷" label="Active Techs" value={techData.length} color="var(--acc)"/>
+            <KPI icon="✅" label="Total Completed" value={techData.reduce((s,t)=>s+t.completed,0)} color="var(--grn)"/>
+            <KPI icon="🔄" label="In Progress" value={techData.reduce((s,t)=>s+t.inProgress,0)} color="var(--amb)"/>
+            <KPI icon="⏱️" label="Avg Hours/Job" value={`${techData.reduce((s,t)=>s+Number(t.avgTime||0),0)&&(techData.reduce((s,t)=>s+Number(t.avgTime||0),0)/techData.filter(t=>t.completed>0).length||1).toFixed(1)}h`} color="var(--blue)"/>
+          </div>
+          <div className="tw"><table>
+            <thead><tr><th>Technician</th><th>Completed</th><th>In Progress</th><th>Total Hours</th><th>Avg Hrs/Job</th></tr></thead>
+            <tbody>{techData.sort((a,b)=>b.completed-a.completed).map((t,i)=>(
+              <tr key={i}>
+                <td style={{fontWeight:600}}>{t.name}</td>
+                <td><span style={{color:"var(--grn)",fontWeight:700}}>{t.completed}</span></td>
+                <td><span style={{color:"var(--amb)"}}>{t.inProgress}</span></td>
+                <td>{Number(t.totalHours).toFixed(1)}h</td>
+                <td>{t.avgTime||"—"}h</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+          <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:16,marginTop:12}}>
+            <div style={{fontWeight:600,fontSize:13,marginBottom:12}}>Completion Rate by Technician</div>
+            {techData.sort((a,b)=>b.completed-a.completed).map((t,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{width:120,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.name}</div>
+                <Bar val={t.completed} max={Math.max(...techData.map(x=>x.completed),1)} color="var(--grn)"/>
+                <div style={{width:50,fontSize:12,fontWeight:600,textAlign:"right"}}>{t.completed}</div>
+              </div>
+            ))}
+          </div></>}
+      </>}
+
+      {tab==="parts"&&<>
+        <div className="sg" style={{marginBottom:12}}>
+          <KPI icon="📦" label="Total SKUs" value={parts.length} color="var(--acc)"/>
+          <KPI icon="💰" label="Inventory Value" value={`R ${Number(partsCost).toFixed(2)}`} color="var(--grn)"/>
+          <KPI icon="⚠️" label="Low Stock Items" value={parts.filter(p=>p.qty<=p.minQty).length} color="var(--red)"/>
+          <KPI icon="📋" label="Avg Stock Value" value={`R ${parts.length>0?Number(partsCost/parts.length).toFixed(2):"0.00"}`} color="var(--blue)"/>
+        </div>
+        <div className="sect">Parts Inventory Cost Breakdown<span/></div>
+        {parts.length===0
+          ?<div className="empty"><div className="ei">🔧</div><div>No parts in inventory</div></div>
+          :<><div className="tw"><table>
+            <thead><tr><th>Part Name</th><th>P/N</th><th>In Stock</th><th>Unit Cost</th><th>Total Value</th><th>Status</th></tr></thead>
+            <tbody>{parts.sort((a,b)=>((b.cost||50)*(b.stock||b.qty||0))-((a.cost||50)*(a.stock||a.qty||0))).map(p=>{
+              const stockQty=p.stock||p.qty||0;
+              const totalVal=(p.cost||50)*stockQty;
+              const isLow=stockQty<=(p.minQty||1);
+              return(<tr key={p.id}>
+                <td style={{fontWeight:600}}>{p.name}</td>
+                <td className="mono" style={{fontSize:11}}>{p.partNo||"—"}</td>
+                <td><span style={{color:isLow?"var(--red)":"var(--grn)",fontWeight:700}}>{stockQty}</span>{isLow&&<span style={{fontSize:10,color:"var(--red)",marginLeft:4}}>LOW</span>}</td>
+                <td>R {Number(p.cost||50).toFixed(2)}</td>
+                <td style={{fontWeight:700}}>R {Number(totalVal).toFixed(2)}</td>
+                <td><span className="bdg" style={{background:isLow?"rgba(240,80,96,.12)":"rgba(46,204,138,.12)",color:isLow?"var(--red)":"var(--grn)",fontSize:10}}>{isLow?"Low Stock":"OK"}</span></td>
+              </tr>);
+            })}</tbody>
+          </table></div></>}
+      </>}
+
+      {tab==="profitability"&&<>
+        <div className="sect">Profitability by Service Type<span/></div>
+        {profitData.length===0
+          ?<div className="empty"><div className="ei">💹</div><div>No service data yet — link invoices to tickets to track profitability</div></div>
+          :<><div className="sg" style={{marginBottom:12}}>
+            <KPI icon="💹" label="Total Revenue" value={`R ${Number(profitData.reduce((s,p)=>s+p.revenue,0)).toFixed(0)}`} color="var(--acc)"/>
+            <KPI icon="💸" label="Total Cost" value={`R ${Number(profitData.reduce((s,p)=>s+p.cost,0)).toFixed(0)}`} color="var(--red)"/>
+            <KPI icon="✅" label="Gross Profit" value={`R ${Number(profitData.reduce((s,p)=>s+p.profit,0)).toFixed(0)}`} color="var(--grn)"/>
+            <KPI icon="📊" label="Avg Margin" value={`${profitData.length>0?(profitData.reduce((s,p)=>s+Number(p.margin),0)/profitData.length).toFixed(1):0}%`} color="var(--blue)"/>
+          </div>
+          <div className="tw"><table>
+            <thead><tr><th>Service Type</th><th>Tickets</th><th>Revenue</th><th>Cost</th><th>Profit</th><th>Margin</th></tr></thead>
+            <tbody>{profitData.sort((a,b)=>b.profit-a.profit).map((p,i)=>(
+              <tr key={i}>
+                <td style={{fontWeight:600}}>{p.type}</td>
+                <td>{p.tickets}</td>
+                <td>R {Number(p.revenue).toFixed(2)}</td>
+                <td>R {Number(p.cost).toFixed(2)}</td>
+                <td style={{fontWeight:700,color:p.profit>=0?"var(--grn)":"var(--red)"}}>R {Number(p.profit).toFixed(2)}</td>
+                <td><span className="bdg" style={{background:Number(p.margin)>=20?"rgba(46,204,138,.15)":Number(p.margin)>=0?"rgba(240,160,48,.15)":"rgba(240,80,96,.15)",color:Number(p.margin)>=20?"var(--grn)":Number(p.margin)>=0?"var(--amb)":"var(--red)"}}>{p.margin}%</span></td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+          <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:16,marginTop:12}}>
+            <div style={{fontWeight:600,fontSize:13,marginBottom:12}}>Profit by Service Type</div>
+            {profitData.sort((a,b)=>b.profit-a.profit).map((p,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{width:130,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.type}</div>
+                <Bar val={Math.max(0,p.profit)} max={Math.max(...profitData.map(x=>x.profit),1)} color={p.profit>=0?"var(--grn)":"var(--red)"}/>
+                <div style={{width:100,fontSize:12,fontWeight:600,textAlign:"right",color:p.profit>=0?"var(--grn)":"var(--red)"}}>R {Number(p.profit).toFixed(0)}</div>
+              </div>
+            ))}
+          </div></>}
+      </>}
+    </>
+  );
+}
+
+// ── CLIENT PORTAL OVERVIEW ────────────────────────────────────
+function ClientPortalPage({clients,tickets,devices,invoices,users}){
+  const [selClient,setSelClient]=useState(null);
+  const [tab,setTab]=useState("overview");
+  const cl=clients.find(c=>c.id===selClient);
+  const cTickets=tickets.filter(t=>t.clientId===selClient);
+  const cDevices=devices.filter(d=>d.clientId===selClient);
+  const cInvoices=invoices.filter(i=>i.clientId===selClient);
+  const openT=cTickets.filter(t=>!["Closed","Resolved"].includes(t.status));
+  const closedT=cTickets.filter(t=>["Closed","Resolved"].includes(t.status));
+  const outstanding=cInvoices.filter(i=>i.status!=="Paid").reduce((s,i)=>s+i.total,0);
+  const paid=cInvoices.filter(i=>i.status==="Paid").reduce((s,i)=>s+i.total,0);
+
+  const STATUS_COLOR={Open:"var(--amb)",Assigned:"var(--blue)",Accepted:"var(--blue)","In Progress":"var(--blue)","Parts Pending":"var(--red)","Parts Arrived":"var(--grn)",Workshop:"var(--mu)",Resolved:"var(--grn)",Closed:"var(--mu)",Escalated:"var(--red)"};
+
+  if(!selClient) return(
+    <>
+      <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:"14px 16px",marginBottom:14,fontSize:13,color:"var(--mu2)"}}>
+        📋 Select a client to view their portal — a read-only snapshot of everything related to that client including tickets, devices, invoices, and activity history.
+      </div>
+      <div style={{marginBottom:12,fontSize:13,color:"var(--mu2)"}}>{clients.length} clients</div>
+      <div className="cg">
+        {clients.map(c=>{
+          const ct=tickets.filter(t=>t.clientId===c.id);
+          const ci=invoices.filter(i=>i.clientId===c.id);
+          const owed=ci.filter(i=>i.status!=="Paid").reduce((s,i)=>s+i.total,0);
+          return(
+            <div key={c.id} className="card" style={{cursor:"pointer"}} onClick={()=>setSelClient(c.id)}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
+                  <div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{c.contactName||"—"}</div>
+                </div>
+                {c.hasSLA&&c.sla&&c.sla!=="None"?<span className="bdg" style={{background:"rgba(0,194,255,.12)",color:"var(--acc)",fontSize:10}}>★ {c.sla}</span>:<span className="bdg" style={{background:"var(--s3)",color:"var(--mu)",fontSize:10}}>No SLA</span>}
+              </div>
+              <div className="crow"><span className="crl">Open tickets</span><span className="crv" style={{color:ct.filter(t=>!["Closed","Resolved"].includes(t.status)).length>0?"var(--amb)":"var(--grn)"}}>{ct.filter(t=>!["Closed","Resolved"].includes(t.status)).length}</span></div>
+              <div className="crow"><span className="crl">Total tickets</span><span className="crv">{ct.length}</span></div>
+              <div className="crow"><span className="crl">Outstanding</span><span className="crv" style={{color:owed>0?"var(--red)":"var(--grn)"}}>{owed>0?`R ${owed.toFixed(2)}`:"Clear"}</span></div>
+              <div className="crow"><span className="crl">Devices</span><span className="crv">{devices.filter(d=>d.clientId===c.id).length}</span></div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+
+  return(
+    <>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+        <button className="btn bg2 bsm" onClick={()=>setSelClient(null)}>← All Clients</button>
+        <div style={{fontWeight:700,fontSize:16}}>{cl?.name}</div>
+        {cl?.hasSLA&&cl?.sla&&cl?.sla!=="None"?<span className="bdg" style={{background:"rgba(0,194,255,.12)",color:"var(--acc)"}}>★ {cl.sla}</span>:<span className="bdg" style={{background:"var(--s3)",color:"var(--mu)"}}>No SLA</span>}
+        {cl?.walkIn&&<span className="bdg" style={{background:"rgba(240,160,48,.12)",color:"var(--amb)"}}>Walk-in</span>}
+      </div>
+
+      <div className="sg" style={{marginBottom:14}}>
+        {[
+          {n:openT.length,l:"Open Tickets",c:"var(--amb)"},
+          {n:closedT.length,l:"Resolved",c:"var(--grn)"},
+          {n:cDevices.length,l:"Devices",c:"var(--blue)"},
+          {n:`R ${outstanding.toFixed(0)}`,l:"Outstanding",c:"var(--red)"},
+          {n:`R ${paid.toFixed(0)}`,l:"Paid",c:"var(--grn)"},
+        ].map(s=><div className="sc" key={s.l}><div className="sc-n" style={{color:s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>)}
+      </div>
+
+      <div className="tabs" style={{marginBottom:12}}>
+        {[["overview","Overview"],["tickets","Tickets"],["devices","Devices"],["invoices","Invoices"],["info","Contact Info"]].map(([id,lbl])=>(
+          <button key={id} className={`tab ${tab===id?"on":""}`} onClick={()=>setTab(id)}>{lbl}</button>
+        ))}
+      </div>
+
+      {tab==="overview"&&<>
+        <div className="sect">Recent Activity<span/></div>
+        {cTickets.slice(0,5).map(t=>(
+          <div key={t.id} style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:9,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div><div style={{fontWeight:600,fontSize:13}}>{t.id}</div><div style={{fontSize:11,color:"var(--mu2)",marginTop:2}}>{t.title}</div></div>
+            <span className="bdg" style={{background:"rgba(0,194,255,.08)",color:STATUS_COLOR[t.status]||"var(--mu)",fontSize:10}}>{t.status}</span>
+          </div>
+        ))}
+        {cTickets.length===0&&<div className="empty"><div className="ei">🎫</div><div>No tickets yet</div></div>}
+      </>}
+
+      {tab==="tickets"&&<>
+        {[{label:"Open",list:openT},{label:"Resolved / Closed",list:closedT}].map(({label,list})=>(
+          <div key={label} style={{marginBottom:16}}>
+            <div className="sect">{label} ({list.length})<span/></div>
+            {list.length===0?<div style={{fontSize:12,color:"var(--mu)",padding:"8px 0"}}>None</div>:list.map(t=>(
+              <div key={t.id} style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:9,padding:"10px 14px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:6}}>
+                  <div style={{fontWeight:600,fontSize:13}}>{t.id}</div>
+                  <span className="bdg" style={{color:STATUS_COLOR[t.status]||"var(--mu)",background:"rgba(0,194,255,.08)",fontSize:10}}>{t.status}</span>
+                </div>
+                <div style={{fontSize:12,color:"var(--mu2)",marginBottom:4}}>{t.title}</div>
+                <div style={{fontSize:11,color:"var(--mu)"}}>{fmtD(t.createdAt)} · {t.priority} priority · {t.type}</div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </>}
+
+      {tab==="devices"&&<>
+        {cDevices.length===0?<div className="empty"><div className="ei">🖥️</div><div>No devices registered</div></div>:cDevices.map(d=>(
+          <div key={d.id} style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:9,padding:"12px 14px",marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:6}}>
+              <div style={{fontWeight:700,fontSize:13}}>{d.brand} {d.model}</div>
+              <span className="bdg" style={{background:"var(--s3)",color:"var(--mu2)",fontSize:10}}>{d.type}</span>
+            </div>
+            <div className="crow"><span className="crl">Serial</span><span className="crv mono">{d.serial||"—"}</span></div>
+            <div className="crow"><span className="crl">Location</span><span className="crv">{d.location||"—"}</span></div>
+            <div className="crow"><span className="crl">SLA</span><span className="crv">{d.sla&&d.sla!=="None"?`★ ${d.sla}`:"None"}</span></div>
+            <div className="crow"><span className="crl">Open tickets</span><span className="crv" style={{color:tickets.filter(t=>t.deviceId===d.id&&!["Closed","Resolved"].includes(t.status)).length>0?"var(--amb)":"var(--grn)"}}>{tickets.filter(t=>t.deviceId===d.id&&!["Closed","Resolved"].includes(t.status)).length}</span></div>
+          </div>
+        ))}
+      </>}
+
+      {tab==="invoices"&&<>
+        {cInvoices.length===0?<div className="empty"><div className="ei">📄</div><div>No invoices</div></div>:cInvoices.map(inv=>(
+          <div key={inv.id} style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:9,padding:"12px 14px",marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:6}}>
+              <div style={{fontWeight:700,fontSize:13}}>{inv.number}</div>
+              <span className="bdg" style={{background:inv.status==="Paid"?"rgba(46,204,138,.12)":inv.status==="Sent"?"rgba(240,160,48,.12)":"rgba(107,114,128,.12)",color:inv.status==="Paid"?"var(--grn)":inv.status==="Sent"?"var(--amb)":"var(--mu)",fontSize:10}}>{inv.status}</span>
+            </div>
+            <div className="crow"><span className="crl">Amount</span><span className="crv" style={{fontWeight:700}}>R {Number(inv.total||0).toFixed(2)}</span></div>
+            <div className="crow"><span className="crl">Date</span><span className="crv">{fmtD(inv.createdAt)}</span></div>
+            {inv.paidDate&&<div className="crow"><span className="crl">Paid on</span><span className="crv" style={{color:"var(--grn)"}}>{fmtD(inv.paidDate)}</span></div>}
+          </div>
+        ))}
+      </>}
+
+      {tab==="info"&&<>
+        <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:"16px 18px"}}>
+          {[
+            {l:"Company",v:cl?.name},
+            {l:"Contact person",v:cl?.contactName},
+            {l:"Email",v:cl?.email},
+            {l:"Phone",v:cl?.phone},
+            {l:"VAT number",v:cl?.vatNumber||"—"},
+            {l:"Address",v:cl?.address||"—"},
+            {l:"Walk-in",v:cl?.walkIn?"Yes":"No"},
+            {l:"SLA tier",v:cl?.hasSLA&&cl?.sla&&cl?.sla!=="None"?cl.sla:"No SLA"},
+          ].map(({l,v})=>v&&<div key={l} className="crow" style={{padding:"8px 0",borderBottom:"1px solid var(--rim)"}}><span className="crl">{l}</span><span className="crv" style={{textAlign:"right",maxWidth:200}}>{v}</span></div>)}
+        </div>
+      </>}
+    </>
+  );
+}
+
+// ── SLA CONTRACTS ─────────────────────────────────────────────
+function SLAContractsPage({clients,slaMeta,profile,isCtrl,contracts}){
+  const [showForm,setShowForm]=useState(false);
+  const [f,setF]=useState({clientId:"",tier:"Silver",startDate:"",endDate:"",responseH:"",resolutionH:"",monthlyFee:"",notes:"",status:"Active"});
+  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
+  const selClient=clients.find(c=>c.id===f.clientId);
+
+  function pickTier(tier){
+    const meta=slaMeta[tier]||{};
+    setF(p=>({...p,tier,responseH:meta.respH||"",resolutionH:meta.resH||""}));
+  }
+
+  async function saveContract(){
+    if(!f.clientId||!f.startDate||!f.endDate){alert("Client, start date and end date are required.");return;}
+    const id="CTR"+uid().toUpperCase();
+    await FS.set("contracts",id,{...f,id,createdBy:profile.id,createdAt:nowISO()});
+    setShowForm(false);setF({clientId:"",tier:"Silver",startDate:"",endDate:"",responseH:"",resolutionH:"",monthlyFee:"",notes:"",status:"Active"});
+  }
+
+  const today=new Date();
+  const expiringSoon=contracts.filter(c=>{const end=new Date(c.endDate);const diff=(end-today)/(1000*60*60*24);return diff>0&&diff<=30;});
+  const expired=contracts.filter(c=>new Date(c.endDate)<today&&c.status==="Active");
+  const active=contracts.filter(c=>c.status==="Active"&&new Date(c.endDate)>=today);
+
+  const statusColor={Active:"var(--grn)",Expired:"var(--red)",Cancelled:"var(--mu)",Pending:"var(--amb)"};
+  const pdf=(con)=>{
+    const cl=clients.find(c=>c.id===con.clientId);
+    const html=`<div style="font-family:'Segoe UI',Arial;padding:30px;max-width:800px;margin:0 auto"><div style="border-left:5px solid #7c3aed;padding:15px 20px;margin-bottom:30px;background:#f5f3ff"><div style="font-size:26px;font-weight:700;color:#7c3aed">SERVICE LEVEL AGREEMENT</div><div style="color:#666;margin-top:5px">Formal service contract</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:30px"><div style="background:#f9f9f9;padding:15px;border-radius:8px"><div style="font-weight:600;color:#333;margin-bottom:8px">SERVICE PROVIDER</div><div style="font-weight:700;font-size:15px">IntelliSupport</div><div style="color:#666;font-size:13px">Field Service Management</div></div><div style="background:#f9f9f9;padding:15px;border-radius:8px"><div style="font-weight:600;color:#333;margin-bottom:8px">CLIENT</div><div style="font-weight:700;font-size:15px">${cl?.name}</div><div style="color:#666;font-size:13px">${cl?.contactName||""}<br/>${cl?.email||""}</div></div></div><div style="background:#f0ebff;padding:15px;border-radius:8px;margin-bottom:20px"><div style="font-weight:600;margin-bottom:10px;color:#5b21b6">CONTRACT DETAILS</div><table style="width:100%;font-size:13px"><tr><td style="padding:5px 0;color:#666">SLA Tier:</td><td style="font-weight:600">${con.tier}</td></tr><tr><td style="padding:5px 0;color:#666">Start Date:</td><td>${fmtD(con.startDate)}</td></tr><tr><td style="padding:5px 0;color:#666">End Date:</td><td>${fmtD(con.endDate)}</td></tr><tr><td style="padding:5px 0;color:#666">Monthly Fee:</td><td style="font-weight:700;color:#5b21b6">${con.monthlyFee?`R ${con.monthlyFee}`:"As quoted"}</td></tr></table></div><div style="background:#f9f9f9;padding:15px;border-radius:8px;margin-bottom:20px"><div style="font-weight:600;margin-bottom:10px;color:#333">SERVICE COMMITMENTS</div><table style="width:100%;font-size:13px"><tr><td style="padding:6px 0;color:#666">Response time:</td><td style="font-weight:600">${con.responseH} hours</td></tr><tr><td style="padding:6px 0;color:#666">Resolution time:</td><td style="font-weight:600">${con.resolutionH} hours</td></tr><tr><td style="padding:6px 0;color:#666">Priority:</td><td>${con.tier} tier priority</td></tr></table></div>${con.notes?`<div style="background:#fffbec;border:1px solid #f5d547;border-radius:8px;padding:12px;margin-bottom:20px"><div style="font-weight:600;margin-bottom:5px">Notes</div><div style="font-size:13px;color:#666">${con.notes}</div></div>`:""}<div style="margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:30px;padding-top:20px;border-top:2px solid #7c3aed"><div><div style="font-weight:600;margin-bottom:20px">Service Provider</div><div style="border-bottom:1px solid #333;height:40px"></div><div style="font-size:12px;color:#666;margin-top:5px">Signature & Date</div></div><div><div style="font-weight:600;margin-bottom:20px">Client</div><div style="border-bottom:1px solid #333;height:40px"></div><div style="font-size:12px;color:#666;margin-top:5px">Signature & Date</div></div></div></div>`;
+    generatePDF(html,`SLA_${cl?.name}_${con.tier}.pdf`);
+  };
+
+  return(
+    <>
+      {expiringSoon.length>0&&<div style={{background:"rgba(240,160,48,.12)",border:"1px solid var(--amb)",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13}}>⚠️ <strong>{expiringSoon.length}</strong> contract{expiringSoon.length!==1?"s":""} expiring within 30 days — review and renew.</div>}
+      {expired.length>0&&<div style={{background:"rgba(240,80,96,.10)",border:"1px solid var(--red)",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13}}>🚨 <strong>{expired.length}</strong> contract{expired.length!==1?"s":""} have expired — update status or renew.</div>}
+
+      <div className="sg" style={{marginBottom:14}}>
+        {[{n:contracts.length,l:"Total",c:"var(--blue)"},{n:active.length,l:"Active",c:"var(--grn)"},{n:expiringSoon.length,l:"Expiring Soon",c:"var(--amb)"},{n:expired.length,l:"Expired",c:"var(--red)"},{n:`R ${contracts.filter(c=>c.status==="Active").reduce((s,c)=>s+Number(c.monthlyFee||0),0).toFixed(0)}`,l:"Monthly Revenue",c:"var(--acc)"}].map(s=>(
+          <div className="sc" key={s.l}><div className="sc-n" style={{color:s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>
+        ))}
+      </div>
+
+      {isCtrl&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button className="btn bp bsm" onClick={()=>setShowForm(v=>!v)}>+ New Contract</button>
+      </div>}
+
+      {showForm&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:11,padding:16,marginBottom:14,display:"flex",flexDirection:"column",gap:11}}>
+        <div style={{fontWeight:700,fontSize:14}}>New SLA Contract</div>
+        <div className="fr2">
+          <Fld label="Client *"><select className="sel" value={f.clientId} onChange={e=>sf("clientId",e.target.value)}><option value="">— Select —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Fld>
+          <Fld label="SLA Tier"><select className="sel" value={f.tier} onChange={e=>pickTier(e.target.value)}><option value="None">None</option>{["Bronze","Silver","Gold","Platinum"].map(t=><option key={t}>{t}</option>)}</select></Fld>
+        </div>
+        {selClient&&<div style={{background:"var(--s2)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"var(--mu2)"}}>Client current SLA: <strong style={{color:"var(--acc)"}}>{selClient.hasSLA&&selClient.sla&&selClient.sla!=="None"?selClient.sla:"No SLA"}</strong></div>}
+        <div className="fr2">
+          <Fld label="Start Date"><input className="inp" type="date" value={f.startDate} onChange={e=>sf("startDate",e.target.value)}/></Fld>
+          <Fld label="End Date"><input className="inp" type="date" value={f.endDate} onChange={e=>sf("endDate",e.target.value)}/></Fld>
+        </div>
+        <div className="fr3">
+          <Fld label="Response (hrs)"><input className="inp" type="number" value={f.responseH} onChange={e=>sf("responseH",e.target.value)}/></Fld>
+          <Fld label="Resolution (hrs)"><input className="inp" type="number" value={f.resolutionH} onChange={e=>sf("resolutionH",e.target.value)}/></Fld>
+          <Fld label="Monthly Fee (R)"><input className="inp" type="number" value={f.monthlyFee} onChange={e=>sf("monthlyFee",e.target.value)} placeholder="0.00"/></Fld>
+        </div>
+        <Fld label="Notes"><textarea className="ta" value={f.notes} onChange={e=>sf("notes",e.target.value)} placeholder="Special terms, exclusions, inclusions…" style={{minHeight:60}}/></Fld>
+        <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={saveContract}>Save Contract</button><button className="btn bg2 bsm" onClick={()=>setShowForm(false)}>Cancel</button></div>
+      </div>}
+
+      {contracts.length===0?<div className="empty"><div className="ei">📋</div><div>No contracts yet</div><div style={{fontSize:12,color:"var(--mu)",marginTop:6}}>Create your first SLA contract to formalise client relationships</div></div>
+        :<div className="cg">{contracts.map(con=>{const cl=clients.find(c=>c.id===con.clientId);const daysLeft=Math.ceil((new Date(con.endDate)-today)/(1000*60*60*24));return(
+          <div key={con.id} className="card">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8}}>
+              <div><div style={{fontWeight:700,fontSize:14}}>{cl?.name||"Unknown client"}</div><div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>★ {con.tier} · {fmtD(con.startDate)} – {fmtD(con.endDate)}</div></div>
+              <span className="bdg" style={{background:`rgba(0,0,0,.06)`,color:statusColor[con.status]||"var(--mu)",fontSize:10}}>{con.status}</span>
+            </div>
+            {con.monthlyFee&&<div className="crow"><span className="crl">Monthly fee</span><span className="crv" style={{fontWeight:700,color:"var(--acc)"}}>R {Number(con.monthlyFee).toFixed(2)}</span></div>}
+            <div className="crow"><span className="crl">Response / Resolution</span><span className="crv">{con.responseH}h / {con.resolutionH}h</span></div>
+            <div className="crow"><span className="crl">Days remaining</span><span className="crv" style={{color:daysLeft<0?"var(--red)":daysLeft<=30?"var(--amb)":"var(--grn)"}}>{daysLeft<0?"Expired":`${daysLeft} days`}</span></div>
+            {con.notes&&<div style={{fontSize:11,color:"var(--mu2)",marginTop:6,borderTop:"1px solid var(--rim)",paddingTop:6}}>{con.notes}</div>}
+            <div className="cacts" style={{marginTop:8}}>
+              <button className="btn bg2 bxs" onClick={()=>pdf(con)}>📄 PDF</button>
+              {isCtrl&&<button className="btn bg2 bxs" onClick={async()=>{await FS.set("contracts",con.id,{...con,status:"Cancelled"});}}>Cancel</button>}
+              {isCtrl&&<button className="btn bp bxs" onClick={async()=>{await FS.set("contracts",con.id,{...con,status:"Active"});}}>Renew</button>}
+            </div>
+          </div>
+        );})}
+        </div>}
+    </>
+  );
+}
+
+// ── PURCHASE ORDERS ───────────────────────────────────────────
+function PurchaseOrdersPage({parts,profile,isCtrl,purchaseOrders}){
+  const [showForm,setShowForm]=useState(false);
+  const [f,setF]=useState({partId:"",partName:"",supplier:"",qty:1,unitCost:"",notes:"",status:"Pending",expectedDate:""});
+  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
+  const lowStock=parts.filter(p=>(p.qty||0)<=(p.minQty||1));
+
+  function pickPart(id){const p=parts.find(x=>x.id===id);if(p)setF(prev=>({...prev,partId:id,partName:p.name,supplier:p.supplier||"",unitCost:p.unitCost||""}));}
+
+  async function savePO(){
+    if(!f.partName||!f.qty){alert("Part and quantity are required.");return;}
+    const poNum=`PO${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,"0")}${String(purchaseOrders.length+1).padStart(4,"0")}`;
+    const id="PO"+uid().toUpperCase();
+    const totalCost=Number(f.qty)*Number(f.unitCost||0);
+    await FS.set("purchase_orders",id,{...f,id,poNumber:poNum,totalCost,createdBy:profile.id,createdAt:nowISO()});
+    setShowForm(false);setF({partId:"",partName:"",supplier:"",qty:1,unitCost:"",notes:"",status:"Pending",expectedDate:""});
+  }
+
+  const statusColor={Pending:"var(--amb)",Sent:"var(--blue)",Confirmed:"var(--blue)",Received:"var(--grn)",Cancelled:"var(--mu)"};
+
+  const pdf=(po)=>{
+    const part=parts.find(p=>p.id===po.partId);
+    const html=`<div style="font-family:'Segoe UI',Arial;padding:30px;max-width:800px;margin:0 auto"><div style="border-left:5px solid #d97706;padding:15px 20px;margin-bottom:30px;background:#fffbeb"><div style="font-size:26px;font-weight:700;color:#d97706">PURCHASE ORDER</div><div style="color:#666;margin-top:5px">${po.poNumber}</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:30px"><div style="background:#f9f9f9;padding:15px;border-radius:8px"><div style="font-weight:600;margin-bottom:8px">FROM (Buyer)</div><div style="font-weight:700;font-size:15px">IntelliSupport</div><div style="font-size:13px;color:#666">Field Service Management</div></div><div style="background:#f9f9f9;padding:15px;border-radius:8px"><div style="font-weight:600;margin-bottom:8px">TO (Supplier)</div><div style="font-weight:700;font-size:15px">${po.supplier||"—"}</div></div></div><div style="background:#fff8ed;padding:15px;border-radius:8px;margin-bottom:20px"><div style="font-weight:600;margin-bottom:10px;color:#92400e">ORDER DETAILS</div><table style="width:100%;font-size:13px"><tr><td style="padding:5px 0;color:#666">PO Number:</td><td style="font-weight:600">${po.poNumber}</td></tr><tr><td style="padding:5px 0;color:#666">Date:</td><td>${fmtD(po.createdAt)}</td></tr><tr><td style="padding:5px 0;color:#666">Expected Delivery:</td><td>${po.expectedDate?fmtD(po.expectedDate):"TBD"}</td></tr><tr><td style="padding:5px 0;color:#666">Status:</td><td>${po.status}</td></tr></table></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px"><thead><tr style="background:#d97706;color:white"><th style="text-align:left;padding:10px">Item</th><th style="text-align:center;padding:10px;width:80px">Qty</th><th style="text-align:right;padding:10px;width:100px">Unit Cost</th><th style="text-align:right;padding:10px;width:100px">Total</th></tr></thead><tbody><tr style="border-bottom:1px solid #eee"><td style="padding:10px">${po.partName}${part?.partNo?` (${part.partNo})`:"" }</td><td style="text-align:center;padding:10px">${po.qty}</td><td style="text-align:right;padding:10px">R ${Number(po.unitCost||0).toFixed(2)}</td><td style="text-align:right;padding:10px;font-weight:700">R ${Number(po.totalCost||0).toFixed(2)}</td></tr></tbody></table>${po.notes?`<div style="background:#fffbec;border:1px solid #f5d547;border-radius:8px;padding:12px;margin-bottom:20px"><strong>Notes:</strong> ${po.notes}</div>`:""}<div style="text-align:center;padding-top:20px;border-top:2px solid #d97706;color:#999;font-size:12px">Generated: ${fmt(nowISO())}</div></div>`;
+    generatePDF(html,`${po.poNumber}.pdf`);
+  };
+
+  return(
+    <>
+      {lowStock.length>0&&<div style={{background:"rgba(240,160,48,.10)",border:"1px solid var(--amb)",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13}}>
+        ⚠️ <strong>{lowStock.length}</strong> part{lowStock.length!==1?"s":""} are low on stock:&nbsp;
+        {lowStock.slice(0,3).map(p=>p.name).join(", ")}{lowStock.length>3?` +${lowStock.length-3} more`:""}.&nbsp;
+        <button className="btn bg2 bxs" style={{marginLeft:4}} onClick={()=>{if(lowStock[0])pickPart(lowStock[0].id);setShowForm(true);}}>Order Now</button>
+      </div>}
+
+      <div className="sg" style={{marginBottom:14}}>
+        {[
+          {n:purchaseOrders.length,l:"Total POs",c:"var(--blue)"},
+          {n:purchaseOrders.filter(p=>p.status==="Pending").length,l:"Pending",c:"var(--amb)"},
+          {n:purchaseOrders.filter(p=>p.status==="Received").length,l:"Received",c:"var(--grn)"},
+          {n:`R ${purchaseOrders.reduce((s,p)=>s+Number(p.totalCost||0),0).toFixed(0)}`,l:"Total Ordered",c:"var(--acc)"},
+        ].map(s=><div className="sc" key={s.l}><div className="sc-n" style={{color:s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>)}
+      </div>
+
+      {isCtrl&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button className="btn bp bsm" onClick={()=>setShowForm(v=>!v)}>+ New Purchase Order</button>
+      </div>}
+
+      {showForm&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:11,padding:16,marginBottom:14,display:"flex",flexDirection:"column",gap:11}}>
+        <div style={{fontWeight:700,fontSize:14}}>New Purchase Order</div>
+        <div className="fr2">
+          <Fld label="Part *">
+            <select className="sel" value={f.partId} onChange={e=>pickPart(e.target.value)}>
+              <option value="">— Select Part —</option>
+              {parts.map(p=><option key={p.id} value={p.id}>{p.name}{p.qty!=null?` (Stock: ${p.qty})`:""}  {(p.qty||0)<=(p.minQty||1)?" ⚠️ LOW":""}</option>)}
+            </select>
+          </Fld>
+          <Fld label="Supplier"><input className="inp" value={f.supplier} onChange={e=>sf("supplier",e.target.value)} placeholder="Supplier name"/></Fld>
+        </div>
+        <div className="fr3">
+          <Fld label="Qty *"><input className="inp" type="number" min="1" value={f.qty} onChange={e=>sf("qty",e.target.value)}/></Fld>
+          <Fld label="Unit Cost (R)"><input className="inp" type="number" step="0.01" value={f.unitCost} onChange={e=>sf("unitCost",e.target.value)}/></Fld>
+          <Fld label="Expected Delivery"><input className="inp" type="date" value={f.expectedDate} onChange={e=>sf("expectedDate",e.target.value)}/></Fld>
+        </div>
+        {f.qty&&f.unitCost&&<div style={{background:"var(--s2)",borderRadius:8,padding:"8px 12px",fontSize:13}}>Total: <strong style={{color:"var(--acc)"}}>R {(Number(f.qty)*Number(f.unitCost)).toFixed(2)}</strong></div>}
+        <Fld label="Notes"><textarea className="ta" value={f.notes} onChange={e=>sf("notes",e.target.value)} placeholder="Delivery instructions, special requirements…" style={{minHeight:50}}/></Fld>
+        <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={savePO}>Save PO</button><button className="btn bg2 bsm" onClick={()=>setShowForm(false)}>Cancel</button></div>
+      </div>}
+
+      {purchaseOrders.length===0?<div className="empty"><div className="ei">📦</div><div>No purchase orders yet</div><div style={{fontSize:12,color:"var(--mu)",marginTop:6}}>Create purchase orders when parts need restocking</div></div>
+        :<div className="cg">{purchaseOrders.map(po=>(
+          <div key={po.id} className="card">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8}}>
+              <div><div style={{fontWeight:700,fontSize:13}}>{po.poNumber}</div><div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{po.partName}</div></div>
+              <span className="bdg" style={{color:statusColor[po.status]||"var(--mu)",background:"rgba(0,0,0,.06)",fontSize:10}}>{po.status}</span>
+            </div>
+            <div className="crow"><span className="crl">Supplier</span><span className="crv">{po.supplier||"—"}</span></div>
+            <div className="crow"><span className="crl">Qty</span><span className="crv">{po.qty}</span></div>
+            <div className="crow"><span className="crl">Total cost</span><span className="crv" style={{fontWeight:700}}>R {Number(po.totalCost||0).toFixed(2)}</span></div>
+            <div className="crow"><span className="crl">Expected</span><span className="crv">{po.expectedDate?fmtD(po.expectedDate):"—"}</span></div>
+            {po.notes&&<div style={{fontSize:11,color:"var(--mu2)",marginTop:6,borderTop:"1px solid var(--rim)",paddingTop:6}}>{po.notes}</div>}
+            <div className="cacts" style={{marginTop:8}}>
+              <button className="btn bg2 bxs" onClick={()=>pdf(po)}>📄 PDF</button>
+              {po.status!=="Received"&&isCtrl&&<button className="btn bgrn bxs" onClick={async()=>await FS.set("purchase_orders",po.id,{...po,status:"Received",receivedAt:nowISO()})}>✓ Received</button>}
+              {po.status==="Pending"&&isCtrl&&<button className="btn bg2 bxs" onClick={async()=>await FS.set("purchase_orders",po.id,{...po,status:"Sent"})}>Mark Sent</button>}
+            </div>
+          </div>
+        ))}</div>}
+    </>
+  );
+}
+
+// ── DEVICE HEALTH SCORECARDS ──────────────────────────────────
+function DeviceHealthPage({devices,tickets,clients,parts}){
+  const [sel,setSel]=useState(null);
+  const [filterClient,setFilterClient]=useState("");
+
+  function scoreDevice(d){
+    const devTickets=tickets.filter(t=>t.deviceId===d.id);
+    const last90=new Date(Date.now()-90*24*60*60*1000);
+    const recentTickets=devTickets.filter(t=>new Date(t.createdAt)>last90);
+    const resolved=devTickets.filter(t=>["Resolved","Closed"].includes(t.status));
+    const comebacks=devTickets.filter(t=>t.isComeback);
+    const lastResolved=devTickets.filter(t=>t.resolvedAt).sort((a,b)=>b.resolvedAt.localeCompare(a.resolvedAt))[0];
+    const daysSinceLast=lastResolved?Math.floor((Date.now()-new Date(lastResolved.resolvedAt))/(1000*60*60*24)):null;
+
+    // Score: start at 100, deduct for issues
+    let score=100;
+    score-=Math.min(recentTickets.length*8,40);   // frequent breakdowns
+    score-=Math.min(comebacks.length*12,24);       // comebacks are serious
+    if(daysSinceLast!==null&&daysSinceLast<14) score-=10; // recently broken
+    score=Math.max(0,Math.min(100,score));
+
+    const grade=score>=80?"Good":score>=60?"Fair":score>=40?"Poor":"Critical";
+    const gradeColor=score>=80?"var(--grn)":score>=60?"var(--amb)":score>=40?"#f97316":"var(--red)";
+
+    return{score,grade,gradeColor,totalTickets:devTickets.length,recentTickets:recentTickets.length,resolved:resolved.length,comebacks:comebacks.length,daysSinceLast,lastResolved};
+  }
+
+  const scored=devices.map(d=>({...d,health:scoreDevice(d)}));
+  const filtered=scored.filter(d=>!filterClient||d.clientId===filterClient);
+  const critical=scored.filter(d=>d.health.grade==="Critical");
+  const poor=scored.filter(d=>d.health.grade==="Poor");
+
+  const selDev=sel?scored.find(d=>d.id===sel):null;
+  const selDevTickets=sel?tickets.filter(t=>t.deviceId===sel).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)):[];
+
+  const ScoreRing=({score,color})=>(
+    <div style={{width:64,height:64,borderRadius:"50%",border:`4px solid ${color}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"var(--s2)"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:16,fontWeight:700,color,lineHeight:1}}>{score}</div>
+        <div style={{fontSize:8,color:"var(--mu)",marginTop:1}}>/ 100</div>
+      </div>
+    </div>
+  );
+
+  return(
+    <>
+      {critical.length>0&&<div style={{background:"rgba(240,80,96,.10)",border:"1px solid var(--red)",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13}}>🚨 <strong>{critical.length}</strong> device{critical.length!==1?"s":""} in critical health — {critical.map(d=>d.brand+" "+d.model).slice(0,3).join(", ")}{critical.length>3?` +${critical.length-3} more`:""}.</div>}
+      {poor.length>0&&<div style={{background:"rgba(249,115,22,.10)",border:"1px solid #f97316",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13}}>⚠️ <strong>{poor.length}</strong> device{poor.length!==1?"s":""} in poor health — consider proactive maintenance.</div>}
+
+      <div className="sg" style={{marginBottom:14}}>
+        {[
+          {n:devices.length,l:"Total Devices",c:"var(--blue)"},
+          {n:scored.filter(d=>d.health.grade==="Good").length,l:"Good",c:"var(--grn)"},
+          {n:scored.filter(d=>d.health.grade==="Fair").length,l:"Fair",c:"var(--amb)"},
+          {n:scored.filter(d=>d.health.grade==="Poor").length,l:"Poor",c:"#f97316"},
+          {n:critical.length,l:"Critical",c:"var(--red)"},
+        ].map(s=><div className="sc" key={s.l}><div className="sc-n" style={{color:s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>)}
+      </div>
+
+      <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+        <select className="fsl" value={filterClient} onChange={e=>setFilterClient(e.target.value)}>
+          <option value="">All Clients</option>
+          {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {sel&&<button className="btn bg2 bsm" onClick={()=>setSel(null)}>← All Devices</button>}
+      </div>
+
+      {!sel&&<div className="cg">
+        {filtered.sort((a,b)=>a.health.score-b.health.score).map(d=>{
+          const cl=clients.find(c=>c.id===d.clientId);
+          return(
+            <div key={d.id} className="card" style={{cursor:"pointer"}} onClick={()=>setSel(d.id)}>
+              <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:10}}>
+                <ScoreRing score={d.health.score} color={d.health.gradeColor}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.brand} {d.model}</div>
+                  <div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{cl?.name||"—"}</div>
+                  <span className="bdg" style={{background:`rgba(0,0,0,.06)`,color:d.health.gradeColor,fontSize:10,marginTop:4,display:"inline-block"}}>{d.health.grade}</span>
+                </div>
+              </div>
+              <div className="crow"><span className="crl">Tickets (90 days)</span><span className="crv" style={{color:d.health.recentTickets>3?"var(--red)":d.health.recentTickets>1?"var(--amb)":"var(--grn)"}}>{d.health.recentTickets}</span></div>
+              <div className="crow"><span className="crl">Comebacks</span><span className="crv" style={{color:d.health.comebacks>0?"var(--red)":"var(--grn)"}}>{d.health.comebacks}</span></div>
+              {d.health.daysSinceLast!==null&&<div className="crow"><span className="crl">Last resolved</span><span className="crv">{d.health.daysSinceLast}d ago</span></div>}
+              <div className="crow"><span className="crl">Serial</span><span className="crv mono" style={{fontSize:11}}>{d.serial||"—"}</span></div>
+            </div>
+          );
+        })}
+        {filtered.length===0&&<div className="empty"><div className="ei">❤️</div><div>No devices to display</div></div>}
+      </div>}
+
+      {selDev&&<>
+        <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:16,background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:"14px 16px"}}>
+          <ScoreRing score={selDev.health.score} color={selDev.health.gradeColor}/>
+          <div>
+            <div style={{fontWeight:700,fontSize:16}}>{selDev.brand} {selDev.model}</div>
+            <div style={{fontSize:12,color:"var(--mu2)",marginTop:2}}>S/N: {selDev.serial||"—"} · {clients.find(c=>c.id===selDev.clientId)?.name||"—"}</div>
+            <span className="bdg" style={{background:`rgba(0,0,0,.06)`,color:selDev.health.gradeColor,marginTop:6,display:"inline-block"}}>{selDev.health.grade} Health</span>
+          </div>
+        </div>
+        <div className="sg" style={{marginBottom:14}}>
+          {[
+            {n:selDev.health.totalTickets,l:"Total Tickets",c:"var(--blue)"},
+            {n:selDev.health.recentTickets,l:"Last 90 days",c:selDev.health.recentTickets>3?"var(--red)":"var(--amb)"},
+            {n:selDev.health.resolved,l:"Resolved",c:"var(--grn)"},
+            {n:selDev.health.comebacks,l:"Comebacks",c:selDev.health.comebacks>0?"var(--red)":"var(--grn)"},
+          ].map(s=><div className="sc" key={s.l}><div className="sc-n" style={{color:s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>)}
+        </div>
+        <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontWeight:600,fontSize:13,marginBottom:10}}>Health Breakdown</div>
+          {[
+            {label:"Breakdown frequency",note:selDev.health.recentTickets>3?"High — "+selDev.health.recentTickets+" tickets in 90 days":selDev.health.recentTickets>1?"Moderate":"Good"},
+            {label:"Comeback rate",note:selDev.health.comebacks>0?`${selDev.health.comebacks} repeat visit${selDev.health.comebacks!==1?"s":""}  — investigate root cause`:"None detected"},
+            {label:"Time since last repair",note:selDev.health.daysSinceLast===null?"No resolved tickets yet":selDev.health.daysSinceLast<14?"Recently repaired ("+selDev.health.daysSinceLast+" days ago)":selDev.health.daysSinceLast+" days ago"},
+            {label:"Recommendation",note:selDev.health.grade==="Good"?"No action needed — continue monitoring":selDev.health.grade==="Fair"?"Schedule preventive maintenance soon":selDev.health.grade==="Poor"?"Urgent maintenance required — consider replacement review":"⚠️ Device may be approaching end-of-life — discuss replacement with client"},
+          ].map(({label,note})=>(
+            <div key={label} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid var(--rim)",fontSize:12}}>
+              <span style={{color:"var(--mu2)",flexShrink:0,marginRight:12}}>{label}</span>
+              <span style={{textAlign:"right"}}>{note}</span>
+            </div>
+          ))}
+        </div>
+        <div className="sect">Ticket History<span/></div>
+        {selDevTickets.length===0?<div className="empty"><div className="ei">🎫</div><div>No tickets</div></div>:selDevTickets.slice(0,10).map(t=>(
+          <div key={t.id} style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:9,padding:"10px 14px",marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"start"}}>
+              <div><div style={{fontWeight:600,fontSize:12}}>{t.id}</div><div style={{fontSize:11,color:"var(--mu2)",marginTop:2}}>{t.title}</div></div>
+              <span className="bdg" style={{fontSize:9,background:"rgba(0,0,0,.06)",color:["Resolved","Closed"].includes(t.status)?"var(--grn)":"var(--amb)"}}>{t.status}</span>
+            </div>
+            <div style={{fontSize:10,color:"var(--mu)",marginTop:5}}>{fmtD(t.createdAt)}{t.isComeback?" · 🔁 Comeback":""}</div>
+          </div>
+        ))}
+      </>}
+    </>
+  );
 }
 
 function generatePDF(content, filename) {
