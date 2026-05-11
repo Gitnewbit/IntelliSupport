@@ -90,6 +90,15 @@ const injectCSS = () => {
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html,body,#root{height:100%;background:#0b0c11}
     :root{--bg:#0b0c11;--s1:#111218;--s2:#181920;--s3:#1f2028;--s4:#262730;--rim:rgba(255,255,255,.06);--rim2:rgba(255,255,255,.11);--tx:#e0e2f0;--mu:#484a68;--mu2:#7879a0;--acc:#00c2ff;--accg:rgba(0,194,255,.18);--grn:#2ecc8a;--red:#f05060;--amb:#f0a030;--pur:#c084fc;--blue:#60a5fa}
+    [data-theme="light"]{--bg:#f0f2f8;--s1:#ffffff;--s2:#f4f6fb;--s3:#e8ecf5;--s4:#dde2ef;--rim:rgba(0,0,0,.08);--rim2:rgba(0,0,0,.14);--tx:#1a1c2e;--mu:#9098b8;--mu2:#5a6380;--acc:#0066dd;--accg:rgba(0,102,221,.14);--grn:#17a065;--red:#d63550;--amb:#c07800;--pur:#7c3aed;--blue:#2563eb}
+    [data-theme="light"] html,[data-theme="light"] body,[data-theme="light"] #root{background:#f0f2f8}
+    [data-theme="light"] .shell{background:#f0f2f8}
+    [data-theme="light"] .sb{background:#ffffff;border-right:1px solid rgba(0,0,0,.08)}
+    [data-theme="light"] .topbar{background:#ffffff;border-bottom:1px solid rgba(0,0,0,.08)}
+    [data-theme="light"] .content{background:#f0f2f8}
+    [data-theme="light"] .card{background:#ffffff;border-color:rgba(0,0,0,.08)}
+    [data-theme="light"] .inp,[data-theme="light"] .sel,[data-theme="light"] .ta{background:#f4f6fb;border-color:rgba(0,0,0,.12);color:#1a1c2e}
+    [data-theme="light"] .inp::placeholder,[data-theme="light"] .ta::placeholder{color:#9098b8}
     body{color:var(--tx);font-family:'Inter',sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
     button,input,select,textarea{font-family:'Inter',sans-serif}
     ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--s4);border-radius:4px}
@@ -310,6 +319,11 @@ function SlaChip({ticket,clients,sm}) {
 function App() {
   useEffect(()=>injectCSS(),[]);
 
+  const writeAudit = async (action, entity, entityId, detail="") => {
+    const id = "AL"+uid();
+    await FS.set("audit_log", id, {id, action, entity, entityId, detail, userId: profile?.id||"", userName: profile?.name||"", createdAt: nowISO()});
+  };
+
   const [authUser,setAuthUser] = useState(undefined);
   const [profile,setProfile]   = useState(null);
   const [users,setUsers]       = useState([]);
@@ -330,6 +344,17 @@ function App() {
   const [selectedInvoice,setSelectedInvoice] = useState(null);
   const [contracts,setContracts] = useState([]);
   const [purchaseOrders,setPurchaseOrders] = useState([]);
+  const [quotes,setQuotes]       = useState([]);
+  const [auditLog,setAuditLog]   = useState([]);
+  const [knowledgeBase,setKnowledgeBase] = useState([]);
+  const [branches,setBranches]   = useState([]);
+  const [darkMode,setDarkMode]   = useState(()=>localStorage.getItem("is_dark")==="1");
+
+  // Apply theme changes
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
+    localStorage.setItem("is_dark", darkMode ? "1" : "0");
+  }, [darkMode]);
 
   // Firebase Auth
 useEffect(() => {
@@ -377,6 +402,10 @@ useEffect(() => {
       FS.sub("invoices", d => setInvoices(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
       FS.sub("contracts",d => setContracts(d)),
       FS.sub("purchase_orders", d => setPurchaseOrders(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
+      FS.sub("quotes",   d => setQuotes(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
+      FS.sub("audit_log",d => setAuditLog(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
+      FS.sub("knowledge_base",d => setKnowledgeBase(d)),
+      FS.sub("branches", d => setBranches(d)),
     ];
     FS.get("settings","main").then(s=>{ if(s) setSettings(s); });
     return ()=>subs.forEach(u=>u());
@@ -473,18 +502,65 @@ if (!profile) {
   const partsArr=tickets.filter(t=>t.status==="Parts Arrived").length;
 
   const navGroups = isTech ? [
-    {grp:"My Work",items:[{id:"dashboard",ic:"🏠",label:"Dashboard"},{id:"tickets",ic:"🎫",label:"My Calls",badge:active||null,bc:"rgba(0,194,255,.18)",btc:"var(--acc)"}]}
-  ] : [
-    {grp:"Overview",items:[{id:"dashboard",ic:"📊",label:"Dashboard"}]},
-    {grp:"Tickets",items:[{id:"tickets",ic:"🎫",label:"All Tickets",badge:tickets.length,bc:"rgba(0,194,255,.18)",btc:"var(--acc)"},{id:"parts",ic:"🔧",label:"Parts & Orders",badge:(partsHold+partsArr)||null,bc:"rgba(240,80,96,.18)",btc:"var(--red)"}]},
-    {grp:"Assets",items:[{id:"yield",ic:"📊",label:"Consumable Yield"},{id:"clients",ic:"🏢",label:"Clients"},{id:"devices",ic:"🖥️",label:"Devices"}]},
-    {grp:"Finance",items:[{id:"billing",ic:"💰",label:"Billing & Invoices"},{id:"analytics",ic:"📈",label:"Analytics"}]},
-    {grp:"Operations",items:[{id:"portal",ic:"🌐",label:"Client Portal"},{id:"contracts",ic:"📋",label:"SLA Contracts"},{id:"purchase_orders",ic:"📦",label:"Purchase Orders"},{id:"device_health",ic:"❤️",label:"Device Health"}]},
-    ...(isMgr?[{grp:"Admin",items:[{id:"team",ic:"👷",label:"Team"},{id:"performance",ic:"🏆",label:"Performance"},{id:"stats",ic:"📈",label:"Stats & KPIs"},{id:"settings",ic:"⚙️",label:"Settings"}]}]:[]),
-  ];
+  {
+    grp: "My Work",
+    items: [
+      { id: "dashboard", ic: "🏠", label: "Dashboard" },
+      { id: "tickets", ic: "🎫", label: "My Calls", badge: active || null, bc: "rgba(0,194,255,.18)", btc: "var(--acc)" },
+      { id: "knowledge", ic: "📚", label: "Knowledge Base" }
+    ]
+  }
+] : [
+  {
+    grp: "Overview",
+    items: [
+      { id: "dashboard", ic: "📊", label: "Dashboard" }
+    ]
+  },
+
+  {
+    grp: "Operations",
+    items: [
+      { id: "tickets", ic: "🎫", label: "All Tickets", badge: tickets.length, bc: "rgba(0,194,255,.18)", btc: "var(--acc)" },
+      { id: "clients", ic: "🏢", label: "Clients" },
+      { id: "devices", ic: "🖥️", label: "Devices" },
+      { id: "parts", ic: "🔧", label: "Parts & Inventory" },
+      { id: "yield", ic: "📊", label: "Consumable Yield" },
+      { id: "purchase_orders", ic: "📦", label: "Purchase Orders" }
+    ]
+  },
+
+  {
+    grp: "Business",
+    items: [
+      { id: "billing", ic: "💰", label: "Billing" },
+      { id: "quotes", ic: "📝", label: "Quotes" },
+      { id: "contracts", ic: "📋", label: "SLA Contracts" },
+      { id: "analytics", ic: "📈", label: "Analytics" }
+    ]
+  },
+
+  {
+    grp: "Team",
+    items: [
+      { id: "team", ic: "👷", label: "Team" },
+      { id: "performance", ic: "🏆", label: "Performance" },
+      { id: "stats", ic: "📊", label: "Statistics" }
+    ]
+  },
+
+  {
+    grp: "System",
+    items: [
+      { id: "settings", ic: "⚙️", label: "Settings" },
+      { id: "audit", ic: "🔍", label: "Audit Log" },
+      { id: "knowledge", ic: "📚", label: "Knowledge Base" }
+    ]
+  }
+];
 
   const goto = id => { setPage(id); setSb(false); };
-  const pageLabels = {dashboard:"Dashboard",tickets:isTech?"My Calls":"All Tickets",parts:"Parts & Orders",yield:"Consumable Yield",clients:"Clients",devices:"Devices",team:"Team",performance:"Performance",stats:"Stats & KPIs",billing:"Billing & Invoices",analytics:"Analytics",portal:"Client Portal",contracts:"SLA Contracts",purchase_orders:"Purchase Orders",device_health:"Device Health",settings:"Settings"};
+  const pageLabels = {dashboard:"Dashboard",tickets:isTech?"My Calls":"All Tickets",parts:"Parts & Orders",yield:"Consumable Yield",clients:"Clients",devices:"Devices",team:"Team",performance:"Performance",stats:"Stats & KPIs",billing:"Billing & Invoices",analytics:"Analytics",portal:"Client Portal",contracts:"SLA Contracts",purchase_orders:"Purchase Orders",device_health:"Device Health",quotes:"Quotes & Estimates",knowledge:"Knowledge Base",branches:"Branches",audit:"Audit Log",settings:"Settings"};
 
   return (
     <div className="shell">
@@ -519,7 +595,27 @@ if (!profile) {
           </div>
           <div className="topbar-r">
             {isCtrl&&page==="tickets"&&<button className="btn bp bsm" onClick={()=>setModal("new-ticket")}>+ Log Call</button>}
-            <BellMenu notifs={myNotifs} unread={unread} open={notifOpen} setOpen={setNotif} markRead={markRead}/>
+            <button title="Toggle theme" onClick={()=>setDarkMode(d=>!d)} style={{background:"var(--s2)",border:"1px solid var(--rim)",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:16,color:"var(--mu2)"}}>{darkMode?"☀️":"🌙"}</button>
+            <button 
+              title="Notifications" 
+              onClick={() => setNotif(p => !p)}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: "rgba(255,255,255,.08)",
+                border: "1px solid var(--rim)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                fontSize: 16,
+                color: "var(--mu2)",
+                transition: "all .12s"
+              }}
+            >
+              🔔
+            </button>
             <Av u={profile} sz={32}/>
           </div>
         </div>
@@ -539,6 +635,10 @@ if (!profile) {
           {(isCtrl||isMgr)&&page==="contracts"&&<SLAContractsPage clients={clients} slaMeta={slaMeta} profile={profile} isCtrl={isCtrl} contracts={contracts}/>}
           {(isCtrl||isMgr)&&page==="purchase_orders"&&<PurchaseOrdersPage parts={parts} profile={profile} isCtrl={isCtrl} purchaseOrders={purchaseOrders}/>}
           {(isCtrl||isMgr)&&page==="device_health"&&<DeviceHealthPage devices={devices} tickets={tickets} clients={clients} parts={parts}/>}
+          {(isCtrl||isMgr)&&page==="quotes"&&<QuotesPage quotes={quotes} clients={clients} tickets={tickets} profile={profile} isCtrl={isCtrl} invoices={invoices} writeAudit={writeAudit}/>}
+          {page==="knowledge"&&<KnowledgeBasePage knowledgeBase={knowledgeBase} profile={profile} tickets={tickets} devices={devices} isCtrl={isCtrl} writeAudit={writeAudit}/>}
+          {(isCtrl||isMgr)&&page==="branches"&&<BranchesPage branches={branches} profile={profile} users={users} clients={clients} tickets={tickets} isCtrl={isCtrl} writeAudit={writeAudit}/>}
+          {isMgr&&page==="audit"&&<AuditLogPage auditLog={auditLog} users={users}/>}
           {isMgr&&page==="team"&&<TeamPage users={users} addUser={addUser} tickets={tickets}/>}
           {isMgr&&page==="performance"&&<PerformancePage tickets={tickets} users={users} settings={settings}/>}
           {isMgr&&page==="stats"&&<StatsPage tickets={tickets} clients={clients} users={users} slaMeta={slaMeta}/>}
@@ -603,68 +703,127 @@ function PartsDetailModal({part,tickets,patchTicket,isCtrl,onClose,onMarkArrived
 function Loading(){return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0b0c11",flexDirection:"column",gap:14}}><div style={{width:48,height:48,borderRadius:12,background:"linear-gradient(135deg,#00c2ff,#0044ff)",display:"flex",alignItems:"center",justifyContent:"center"}}><Logo size={28}/></div><div style={{color:"#484a68",fontSize:13,fontFamily:"Inter,sans-serif"}}>Loading IntelliSupport…</div></div>;}
 
 // ── LOGIN ─────────────────────────────────────────────────────
-function LoginPage(){
-  const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [busy,setBusy]=useState(false);const [reset,setReset]=useState(false);const [sent,setSent]=useState(false);
-async function login(e){
-  e.preventDefault();
-  console.log("LOGIN CLICKED");
-  setBusy(true);
-  setErr("");
-  try{
-    const userCred = await signInWithEmailAndPassword(fbAuth,email,pw);
-    console.log("LOGIN SUCCESS:", userCred);
-  }catch(ex){
-    console.error("LOGIN ERROR:", ex);
-    setErr(ex.message);
+function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function login(e) {
+    e.preventDefault();
+
+    console.log("LOGIN CLICKED");
+
+    setBusy(true);
+    setErr("");
+
+    try {
+      const userCred = await signInWithEmailAndPassword(
+        fbAuth,
+        email,
+        pw
+      );
+
+      console.log("LOGIN SUCCESS:", userCred);
+    } catch (ex) {
+      console.error("LOGIN ERROR:", ex);
+      setErr(ex.message);
+    }
+
+    setBusy(false);
   }
-  setBusy(false);
-}
-  async function doReset(){if(!email.trim()){setErr("Enter your email first.");return;}try{await sendPasswordResetEmail(fbAuth,email);setSent(true);setErr("");}catch(ex){setErr(ex.message);}}
-  return(
+
+  return (
     <div className="login-bg">
       <div className="login-box">
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:8}}>
-          <div style={{width:48,height:48,borderRadius:13,background:"linear-gradient(135deg,#00c2ff,#0044ff)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 28px rgba(0,194,255,.3)"}}><Logo size={28}/></div>
-          <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.4px"}}>Intelli<span style={{color:"#00c2ff"}}>Support</span></div><div style={{fontSize:11,color:"#484a68",marginTop:2}}>Field Service Cloud · South Africa</div></div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            marginBottom: 20
+          }}
+        >
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 12,
+              background: "linear-gradient(135deg,#00c2ff,#0044ff)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Logo size={28} />
+          </div>
+
+          <div>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 800
+              }}
+            >
+              IntelliSupport
+            </div>
+
+            <div
+              style={{
+                fontSize: 11,
+                color: "#7879a0"
+              }}
+            >
+              Field Service Cloud
+            </div>
+          </div>
         </div>
-        <div style={{fontSize:13,color:"#7879a0",textAlign:"center",marginBottom:22,marginTop:6}}>{reset?"Reset your password":"Sign in to your account"}</div>
-        {err&&<div className="err-box" style={{marginBottom:12}}>{err}</div>}
-        {sent&&<div style={{background:"rgba(46,204,138,.1)",border:"1px solid rgba(46,204,138,.25)",borderRadius:8,padding:"12px",fontSize:13,color:"#2ecc8a",textAlign:"center",marginBottom:12}}>✅ Reset email sent! Check your inbox.</div>}
-        <form onSubmit={login} style={{display:"flex",flexDirection:"column",gap:12}}>
-          <div className="fi"><label>Email Address</label><input className="inp" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@company.co.za" autoComplete="email" required/></div>
-          {!reset&&<div className="fi"><label>Password</label><input className="inp" type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="••••••••" autoComplete="current-password" required/></div>}
-          {!reset&&<button className="btn bp btn-full" type="submit" disabled={busy}>{busy?"Signing in…":"Sign In →"}</button>}
+
+        {err && (
+          <div className="err-box" style={{ marginBottom: 12 }}>
+            {err}
+          </div>
+        )}
+
+        <form onSubmit={login}>
+          <div className="fi">
+            <label>Email</label>
+
+            <input
+              className="inp"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter email"
+            />
+          </div>
+
+          <div className="fi" style={{ marginTop: 12 }}>
+            <label>Password</label>
+
+            <input
+              className="inp"
+              type="password"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              placeholder="Enter password"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="btn bp btn-full"
+            style={{ marginTop: 18 }}
+          >
+            {busy ? "Signing in..." : "Sign In"}
+          </button>
         </form>
-        <div style={{textAlign:"center",marginTop:12,display:"flex",gap:8,justifyContent:"center"}}>
-          {reset?<><button className="link-btn" onClick={doReset}>Send Reset Email</button><span style={{color:"#484a68"}}>·</span><button className="link-btn" onClick={()=>{setReset(false);setSent(false);}}>Back</button></>:<button className="link-btn" onClick={()=>setReset(true)}>Forgot password?</button>}
-        </div>
-        <div style={{marginTop:18,padding:"11px 13px",background:"var(--s2)",borderRadius:9,fontSize:11,color:"#484a68",textAlign:"center"}}>🔒 Secured by Firebase Authentication<br/>New users are added by the Manager from the Team page.</div>
       </div>
     </div>
   );
 }
-
-// ── BELL MENU ─────────────────────────────────────────────────
-function BellMenu({notifs,unread,open,setOpen,markRead}){
-  const ref=useRef();
-  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[setOpen]);
-  return(
-    <div style={{position:"relative"}} ref={ref}>
-      <button className="bell-btn" onClick={()=>{setOpen(p=>!p);if(!open)markRead();}}>🔔{unread>0&&<span className="bell-dot"/>}</button>
-      {open&&<div className="notif-panel">
-        <div className="np-hd"><span>Notifications</span><span style={{color:"var(--mu)",fontWeight:400}}>{unread} unread</span></div>
-        {notifs.length===0&&<div style={{padding:"18px",textAlign:"center",fontSize:12,color:"var(--mu)"}}>No notifications</div>}
-        {notifs.slice(0,15).map(n=>(
-          <div key={n.id} className={`np-item ${n.read?"":"unr"}`}>
-            <div className="np-dot" style={{background:n.read?"var(--mu)":"var(--acc)"}}/>
-            <div><div className="np-msg">{n.msg}</div><div className="np-ts">{fmtD(n.ts)}</div></div>
-          </div>
-        ))}
-      </div>}
-    </div>
-  );
-}
-
 // ── TECH DASHBOARD ────────────────────────────────────────────
 function TechDash({tickets,user,settings,onView}){
   const mine=tickets.filter(t=>t.techId===user.id);
@@ -2382,6 +2541,325 @@ function DeviceHealthPage({devices,tickets,clients,parts}){
           </div>
         ))}
       </>}
+    </>
+  );
+}
+
+// ── QUOTES & ESTIMATES ────────────────────────────────────────
+function QuotesPage({quotes,clients,tickets,profile,isCtrl,invoices,writeAudit}){
+  const [showForm,setShowForm]=useState(false);
+  const [sigModal,setSigModal]=useState(null);
+  const [sigData,setSigData]=useState("");
+  const [f,setF]=useState({clientId:"",ticketId:"",lineItems:[],labourHours:0,labourRate:950,travelKm:0,travelRate:15,discount:0,notes:"",validDays:14,status:"Draft"});
+  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
+  const calcTotals=()=>{let sub=0;f.lineItems.forEach(li=>{sub+=(li.qty||0)*(li.rate||0);});sub+=(f.labourHours||0)*(f.labourRate||950);sub+=(f.travelKm||0)*(f.travelRate||15);const disc=f.discount||0;const subtotal=Math.max(0,sub-disc);const tax=subtotal*0.15;return{subtotal,tax,total:subtotal+tax};};
+  const totals=calcTotals();
+  const genNum=()=>{const now=new Date();return `QT${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(quotes.length+1).padStart(4,"0")}`;};
+
+  async function saveQuote(){
+    if(!f.clientId){alert("Select a client.");return;}
+    const id="QT"+uid();
+    const q={...f,id,quoteNumber:genNum(),...calcTotals(),createdBy:profile.id,createdAt:nowISO()};
+    await FS.set("quotes",id,q);
+    await writeAudit("CREATE","quote",id,`Quote ${q.quoteNumber} created`);
+    setShowForm(false);setF({clientId:"",ticketId:"",lineItems:[],labourHours:0,labourRate:950,travelKm:0,travelRate:15,discount:0,notes:"",validDays:14,status:"Draft"});
+  }
+
+  async function convertToInvoice(q){
+    const invId="INV"+uid();
+    const now=new Date();
+    const invNum=`INV-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(invoices.length+1).padStart(4,"0")}`;
+    await FS.set("invoices",invId,{...q,id:invId,number:invNum,status:"Draft",quoteId:q.id,createdAt:nowISO(),updatedAt:nowISO()});
+    await FS.set("quotes",q.id,{...q,status:"Converted",convertedAt:nowISO()});
+    await writeAudit("CONVERT","quote",q.id,`Converted to invoice ${invNum}`);
+    alert(`Invoice ${invNum} created from quote ${q.quoteNumber}`);
+  }
+
+  async function saveSignature(q){
+    await FS.set("quotes",q.id,{...q,status:"Approved",clientSignature:sigData,signedAt:nowISO()});
+    await writeAudit("APPROVE","quote",q.id,`Quote ${q.quoteNumber} signed and approved`);
+    setSigModal(null);setSigData("");
+  }
+
+  const pdfQuote=(q)=>{
+    const cl=clients.find(c=>c.id===q.clientId);
+    const html=`<div style="font-family:'Segoe UI',Arial;padding:30px;max-width:800px;margin:0 auto"><div style="border-left:5px solid #7c3aed;padding:15px 20px;margin-bottom:30px;background:#f5f3ff"><div style="font-size:26px;font-weight:700;color:#7c3aed">QUOTE / ESTIMATE</div><div style="color:#666;margin-top:5px">${q.quoteNumber}</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:30px"><div style="background:#f9f9f9;padding:15px;border-radius:8px"><div style="font-weight:600;margin-bottom:8px">FROM</div><div style="font-weight:700;font-size:15px">IntelliSupport</div></div><div style="background:#f9f9f9;padding:15px;border-radius:8px"><div style="font-weight:600;margin-bottom:8px">QUOTE FOR</div><div style="font-weight:700;font-size:15px">${cl?.name}</div><div style="font-size:13px;color:#666">${cl?.email||""}</div></div></div><div style="background:#f0ebff;padding:12px 15px;border-radius:8px;margin-bottom:20px;font-size:13px;color:#5b21b6"><strong>Valid for ${q.validDays} days</strong> from ${fmtD(q.createdAt)} · Status: ${q.status}</div><table style="width:100%;border-collapse:collapse;margin-bottom:20px"><thead><tr style="background:#7c3aed;color:white"><th style="text-align:left;padding:10px">Description</th><th style="text-align:right;padding:10px;width:60px">Qty</th><th style="text-align:right;padding:10px;width:90px">Rate</th><th style="text-align:right;padding:10px;width:90px">Amount</th></tr></thead><tbody>${q.lineItems?.map(li=>`<tr style="border-bottom:1px solid #eee"><td style="padding:10px">${li.description}</td><td style="text-align:right;padding:10px">${li.qty}</td><td style="text-align:right;padding:10px">R ${Number(li.rate||0).toFixed(2)}</td><td style="text-align:right;padding:10px;font-weight:600">R ${Number((li.qty||0)*(li.rate||0)).toFixed(2)}</td></tr>`).join("")||""}${q.labourHours>0?`<tr style="border-bottom:1px solid #eee"><td style="padding:10px">Labour</td><td style="text-align:right;padding:10px">${q.labourHours}h</td><td style="text-align:right;padding:10px">R ${Number(q.labourRate).toFixed(2)}</td><td style="text-align:right;padding:10px;font-weight:600">R ${Number(q.labourHours*q.labourRate).toFixed(2)}</td></tr>`:""}${q.travelKm>0?`<tr style="border-bottom:1px solid #eee"><td style="padding:10px">Travel</td><td style="text-align:right;padding:10px">${q.travelKm}km</td><td style="text-align:right;padding:10px">R ${Number(q.travelRate).toFixed(2)}</td><td style="text-align:right;padding:10px;font-weight:600">R ${Number(q.travelKm*q.travelRate).toFixed(2)}</td></tr>`:""}</tbody></table><div style="display:flex;justify-content:flex-end;margin-bottom:20px"><div style="width:280px"><div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;font-size:13px"><span>Subtotal:</span><span>R ${Number(q.subtotal||0).toFixed(2)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px"><span>VAT (15%):</span><span>R ${Number(q.tax||0).toFixed(2)}</span></div><div style="display:flex;justify-content:space-between;padding:10px 0;font-size:16px;font-weight:700;color:#7c3aed"><span>TOTAL:</span><span>R ${Number(q.total||0).toFixed(2)}</span></div></div></div>${q.clientSignature?`<div style="margin-top:20px;padding:15px;border:1px solid #7c3aed;border-radius:8px"><div style="font-weight:600;margin-bottom:10px;color:#7c3aed">Client Approval</div><img src="${q.clientSignature}" style="max-width:200px;border:1px solid #ddd;border-radius:4px"/><div style="font-size:12px;color:#666;margin-top:5px">Signed: ${fmtD(q.signedAt)}</div></div>`:`<div style="margin-top:30px;display:grid;grid-template-columns:1fr 1fr;gap:30px"><div><div style="font-weight:600;margin-bottom:20px">Approved by Client</div><div style="border-bottom:1px solid #333;height:40px"></div><div style="font-size:12px;color:#666;margin-top:5px">Signature & Date</div></div></div>`}${q.notes?`<div style="margin-top:15px;background:#fffbec;border:1px solid #f5d547;border-radius:8px;padding:12px"><strong>Notes:</strong> ${q.notes}</div>`:""}</div>`;
+    generatePDF(html,`${q.quoteNumber}.pdf`);
+  };
+
+  const SigPad=({onSave,onClose})=>{
+    const cv=useRef();
+    const [drawing,setDrawing]=useState(false);
+    const start=(e)=>{const c=cv.current;const r=c.getBoundingClientRect();const ctx=c.getContext("2d");ctx.beginPath();const x=(e.touches?e.touches[0].clientX:e.clientX)-r.left;const y=(e.touches?e.touches[0].clientY:e.clientY)-r.top;ctx.moveTo(x,y);setDrawing(true);};
+    const draw=(e)=>{if(!drawing)return;e.preventDefault();const c=cv.current;const r=c.getBoundingClientRect();const ctx=c.getContext("2d");ctx.lineWidth=2;ctx.lineCap="round";ctx.strokeStyle="#1a1c2e";const x=(e.touches?e.touches[0].clientX:e.clientX)-r.left;const y=(e.touches?e.touches[0].clientY:e.clientY)-r.top;ctx.lineTo(x,y);ctx.stroke();};
+    const end=()=>setDrawing(false);
+    const clear=()=>{const c=cv.current;c.getContext("2d").clearRect(0,0,c.width,c.height);};
+    const save=()=>{const data=cv.current.toDataURL();setSigData(data);onSave(data);};
+    return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:14,padding:20,width:360,maxWidth:"90vw"}}>
+        <div style={{fontWeight:700,marginBottom:12}}>Client Signature</div>
+        <div style={{fontSize:12,color:"var(--mu2)",marginBottom:10}}>Have the client sign in the box below</div>
+        <canvas ref={cv} width={320} height={160} style={{border:"2px solid var(--rim2)",borderRadius:8,background:"#fff",cursor:"crosshair",touchAction:"none",width:"100%"}} onMouseDown={start} onMouseMove={draw} onMouseUp={end} onTouchStart={start} onTouchMove={draw} onTouchEnd={end}/>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button className="btn bp bsm" onClick={save}>Save Signature</button>
+          <button className="btn bg2 bsm" onClick={clear}>Clear</button>
+          <button className="btn bg2 bsm" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>);
+  };
+
+  const statusColor={Draft:"var(--mu)",Sent:"var(--blue)",Approved:"var(--grn)",Rejected:"var(--red)",Converted:"var(--pur)",Expired:"var(--mu)"};
+  return(
+    <>
+      {sigModal&&<SigPad onSave={()=>saveSignature(sigModal)} onClose={()=>setSigModal(null)}/>}
+      <div className="sg" style={{marginBottom:12}}>
+        {[{n:quotes.length,l:"Total",c:"var(--blue)"},{n:quotes.filter(q=>q.status==="Draft").length,l:"Draft",c:"var(--mu)"},{n:quotes.filter(q=>q.status==="Approved").length,l:"Approved",c:"var(--grn)"},{n:quotes.filter(q=>q.status==="Converted").length,l:"Converted",c:"var(--pur)"},{n:`R ${quotes.reduce((s,q)=>s+(q.total||0),0).toFixed(0)}`,l:"Total Value",c:"var(--acc)"}].map(s=><div className="sc" key={s.l}><div className="sc-n" style={{color:s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>)}
+      </div>
+      {isCtrl&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><button className="btn bp bsm" onClick={()=>setShowForm(v=>!v)}>+ New Quote</button></div>}
+      {showForm&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:11,padding:16,marginBottom:14,display:"flex",flexDirection:"column",gap:11}}>
+        <div style={{fontWeight:700,fontSize:14}}>New Quote / Estimate</div>
+        <div className="fr2"><Fld label="Client *"><select className="sel" value={f.clientId} onChange={e=>sf("clientId",e.target.value)}><option value="">— Select —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Fld><Fld label="Linked Ticket"><select className="sel" value={f.ticketId} onChange={e=>sf("ticketId",e.target.value)}><option value="">— None —</option>{tickets.map(t=><option key={t.id} value={t.id}>{t.id}</option>)}</select></Fld></div>
+        <div style={{background:"var(--s2)",borderRadius:9,padding:12}}>
+          <div style={{fontWeight:600,fontSize:12,marginBottom:8}}>Line Items</div>
+          {f.lineItems.map((li,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"1fr 80px 100px auto",gap:6,marginBottom:6}}>
+            <input className="inp" placeholder="Description" value={li.description||""} onChange={e=>{const n=[...f.lineItems];n[i].description=e.target.value;sf("lineItems",n);}}/>
+            <input className="inp" type="number" placeholder="Qty" value={li.qty||""} onChange={e=>{const n=[...f.lineItems];n[i].qty=+e.target.value;sf("lineItems",n);}}/>
+            <input className="inp" type="number" placeholder="Rate" value={li.rate||""} onChange={e=>{const n=[...f.lineItems];n[i].rate=+e.target.value;sf("lineItems",n);}}/>
+            <button className="btn bd bxs" onClick={()=>sf("lineItems",f.lineItems.filter((_,j)=>j!==i))}>✕</button>
+          </div>)}
+          <button className="btn bg2 bxs" onClick={()=>sf("lineItems",[...f.lineItems,{description:"",qty:1,rate:0}])}>+ Item</button>
+        </div>
+        <div className="fr3">
+          <Fld label="Labour Hours"><input className="inp" type="number" step="0.5" value={f.labourHours} onChange={e=>sf("labourHours",+e.target.value)}/></Fld>
+          <Fld label="Rate/Hr (R)"><input className="inp" type="number" value={f.labourRate} onChange={e=>sf("labourRate",+e.target.value)}/></Fld>
+          <Fld label="Travel (km)"><input className="inp" type="number" step="0.1" value={f.travelKm} onChange={e=>sf("travelKm",+e.target.value)}/></Fld>
+        </div>
+        <div className="fr2">
+          <Fld label="Discount (R)"><input className="inp" type="number" value={f.discount} onChange={e=>sf("discount",+e.target.value)}/></Fld>
+          <Fld label="Valid for (days)"><input className="inp" type="number" value={f.validDays} onChange={e=>sf("validDays",+e.target.value)}/></Fld>
+        </div>
+        <div style={{background:"var(--s2)",borderRadius:8,padding:"10px 14px",fontSize:12,display:"flex",gap:20}}>
+          <span>Subtotal: <strong>R {totals.subtotal.toFixed(2)}</strong></span>
+          <span>VAT: <strong>R {totals.tax.toFixed(2)}</strong></span>
+          <span style={{color:"var(--acc)",fontWeight:700}}>Total: R {totals.total.toFixed(2)}</span>
+        </div>
+        <Fld label="Notes"><textarea className="ta" value={f.notes} onChange={e=>sf("notes",e.target.value)} placeholder="Terms, conditions, exclusions…" style={{minHeight:50}}/></Fld>
+        <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={saveQuote}>Save Quote</button><button className="btn bg2 bsm" onClick={()=>setShowForm(false)}>Cancel</button></div>
+      </div>}
+      {quotes.length===0?<div className="empty"><div className="ei">📝</div><div>No quotes yet</div><div style={{fontSize:12,color:"var(--mu)",marginTop:6}}>Create a quote before starting work — convert to invoice on completion</div></div>
+        :<div className="cg">{quotes.map(q=>{const cl=clients.find(c=>c.id===q.clientId);return(
+          <div key={q.id} className="card">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8}}>
+              <div><div style={{fontWeight:700,fontSize:13}}>{q.quoteNumber}</div><div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{cl?.name}</div></div>
+              <span className="bdg" style={{background:"rgba(0,0,0,.06)",color:statusColor[q.status]||"var(--mu)",fontSize:10}}>{q.status}</span>
+            </div>
+            <div className="crow"><span className="crl">Total</span><span className="crv" style={{fontWeight:700,color:"var(--acc)"}}>R {Number(q.total||0).toFixed(2)}</span></div>
+            <div className="crow"><span className="crl">Valid until</span><span className="crv">{fmtD(new Date(new Date(q.createdAt).getTime()+(q.validDays||14)*86400000).toISOString())}</span></div>
+            {q.signedAt&&<div className="crow"><span className="crl">Signed</span><span className="crv" style={{color:"var(--grn)"}}>✓ {fmtD(q.signedAt)}</span></div>}
+            <div className="cacts" style={{marginTop:8}}>
+              <button className="btn bg2 bxs" onClick={()=>pdfQuote(q)}>📄 PDF</button>
+              {q.status!=="Converted"&&q.status!=="Approved"&&isCtrl&&<button className="btn bg2 bxs" onClick={()=>setSigModal(q)}>✍️ Sign</button>}
+              {(q.status==="Approved"||q.status==="Draft")&&isCtrl&&<button className="btn bp bxs" onClick={()=>convertToInvoice(q)}>→ Invoice</button>}
+              {isCtrl&&<button className="btn bd bxs" style={{marginLeft:"auto"}} onClick={async()=>await FS.del("quotes",q.id)}>✕</button>}
+            </div>
+          </div>
+        );})}
+        </div>}
+    </>
+  );
+}
+
+// ── KNOWLEDGE BASE ────────────────────────────────────────────
+function KnowledgeBasePage({knowledgeBase,profile,tickets,devices,isCtrl,writeAudit}){
+  const [showForm,setShowForm]=useState(false);
+  const [search,setSearch]=useState("");
+  const [selTag,setSelTag]=useState("All");
+  const [expandId,setExpandId]=useState(null);
+  const [f,setF]=useState({title:"",problem:"",solution:"",deviceTypes:[],tags:"",relatedTicketId:""});
+  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
+
+  const allTags=["All",...new Set(knowledgeBase.flatMap(a=>a.tags?.split(",").map(t=>t.trim()).filter(Boolean)||[]))];
+  const filtered=knowledgeBase.filter(a=>{
+    const matchSearch=!search||a.title?.toLowerCase().includes(search.toLowerCase())||a.problem?.toLowerCase().includes(search.toLowerCase())||a.solution?.toLowerCase().includes(search.toLowerCase());
+    const matchTag=selTag==="All"||(a.tags||"").includes(selTag);
+    return matchSearch&&matchTag;
+  });
+
+  async function saveArticle(){
+    if(!f.title.trim()||!f.solution.trim()){alert("Title and solution are required.");return;}
+    const id="KB"+uid();
+    await FS.set("knowledge_base",id,{...f,id,createdBy:profile.id,createdByName:profile.name,createdAt:nowISO(),views:0,helpful:0});
+    await writeAudit("CREATE","knowledge_base",id,`Article "${f.title}" added`);
+    setShowForm(false);setF({title:"",problem:"",solution:"",deviceTypes:[],tags:"",relatedTicketId:""});
+  }
+
+  async function markHelpful(a){
+    await FS.set("knowledge_base",a.id,{...a,helpful:(a.helpful||0)+1});
+  }
+
+  return(
+    <>
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+        <div className="sw" style={{flex:1,minWidth:200}}><span className="sic">🔍</span><input className="sinp" placeholder="Search solutions…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {allTags.map(t=><button key={t} onClick={()=>setSelTag(t)} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid var(--rim2)",background:selTag===t?"var(--acc)":"var(--s2)",color:selTag===t?"#000":"var(--mu2)",cursor:"pointer"}}>{t}</button>)}
+        </div>
+        <button className="btn bp bsm" onClick={()=>setShowForm(v=>!v)}>+ Add Solution</button>
+      </div>
+      <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:"var(--mu2)"}}>
+        📚 {knowledgeBase.length} solution{knowledgeBase.length!==1?"s":""} in library · {filtered.length} matching
+      </div>
+      {showForm&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:11,padding:16,marginBottom:14,display:"flex",flexDirection:"column",gap:11}}>
+        <div style={{fontWeight:700,fontSize:14}}>New Knowledge Base Article</div>
+        <Fld label="Title *"><input className="inp" value={f.title} onChange={e=>sf("title",e.target.value)} placeholder="e.g. Fuser unit replacement on Kyocera M4125"/></Fld>
+        <Fld label="Problem / Symptom"><textarea className="ta" value={f.problem} onChange={e=>sf("problem",e.target.value)} placeholder="Describe what the problem looks like…" style={{minHeight:60}}/></Fld>
+        <Fld label="Solution / Fix *"><textarea className="ta" value={f.solution} onChange={e=>sf("solution",e.target.value)} placeholder="Step-by-step resolution…" style={{minHeight:100}}/></Fld>
+        <div className="fr2">
+          <Fld label="Tags (comma-separated)"><input className="inp" value={f.tags} onChange={e=>sf("tags",e.target.value)} placeholder="Kyocera, Fuser, Error C6000"/></Fld>
+          <Fld label="Related Ticket ID"><input className="inp" value={f.relatedTicketId} onChange={e=>sf("relatedTicketId",e.target.value)} placeholder="TK20240505…"/></Fld>
+        </div>
+        <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={saveArticle}>Save Article</button><button className="btn bg2 bsm" onClick={()=>setShowForm(false)}>Cancel</button></div>
+      </div>}
+      {filtered.length===0?<div className="empty"><div className="ei">📚</div><div>No articles {search?"matching your search":""}</div></div>
+        :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filtered.map(a=>(
+            <div key={a.id} style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:10,overflow:"hidden"}}>
+              <div style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onClick={()=>setExpandId(expandId===a.id?null:a.id)}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:13}}>{a.title}</div>
+                  <div style={{fontSize:11,color:"var(--mu)",marginTop:3}}>By {a.createdByName} · {fmtD(a.createdAt)}{a.tags&&<span style={{marginLeft:8}}>{a.tags.split(",").slice(0,3).map(t=><span key={t} style={{background:"var(--s3)",borderRadius:4,padding:"1px 6px",marginLeft:4,fontSize:10}}>{t.trim()}</span>)}</span>}</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+                  <span style={{fontSize:11,color:"var(--mu)"}}>👍 {a.helpful||0}</span>
+                  <span style={{color:"var(--mu)",fontSize:16}}>{expandId===a.id?"▲":"▼"}</span>
+                </div>
+              </div>
+              {expandId===a.id&&<div style={{padding:"0 16px 16px",borderTop:"1px solid var(--rim)"}}>
+                {a.problem&&<><div style={{fontWeight:600,fontSize:12,color:"var(--mu2)",marginTop:12,marginBottom:4}}>PROBLEM</div><div style={{fontSize:13,lineHeight:1.6,color:"var(--tx)"}}>{a.problem}</div></>}
+                <div style={{fontWeight:600,fontSize:12,color:"var(--mu2)",marginTop:12,marginBottom:4}}>SOLUTION</div>
+                <div style={{fontSize:13,lineHeight:1.7,color:"var(--tx)",whiteSpace:"pre-wrap"}}>{a.solution}</div>
+                {a.relatedTicketId&&<div style={{marginTop:10,fontSize:12,color:"var(--mu2)"}}>Related ticket: <span style={{color:"var(--acc)"}}>{a.relatedTicketId}</span></div>}
+                <div style={{display:"flex",gap:8,marginTop:12}}>
+                  <button className="btn bg2 bxs" onClick={()=>markHelpful(a)}>👍 Helpful</button>
+                  {isCtrl&&<button className="btn bd bxs" style={{marginLeft:"auto"}} onClick={async()=>await FS.del("knowledge_base",a.id)}>Delete</button>}
+                </div>
+              </div>}
+            </div>
+          ))}
+        </div>}
+    </>
+  );
+}
+
+// ── AUDIT LOG ─────────────────────────────────────────────────
+function AuditLogPage({auditLog,users}){
+  const [search,setSearch]=useState("");
+  const [filterAction,setFilterAction]=useState("All");
+  const actions=["All",...new Set(auditLog.map(a=>a.action))];
+  const filtered=auditLog.filter(a=>{
+    const matchSearch=!search||a.detail?.toLowerCase().includes(search.toLowerCase())||a.entity?.toLowerCase().includes(search.toLowerCase())||a.userName?.toLowerCase().includes(search.toLowerCase());
+    const matchAction=filterAction==="All"||a.action===filterAction;
+    return matchSearch&&matchAction;
+  });
+  const actionColor={CREATE:"var(--grn)",UPDATE:"var(--amb)",DELETE:"var(--red)",CONVERT:"var(--pur)",APPROVE:"var(--grn)",CANCEL:"var(--mu)"};
+  return(
+    <>
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <div className="sw" style={{flex:1,minWidth:200}}><span className="sic">🔍</span><input className="sinp" placeholder="Search audit log…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+        <select className="fsl" value={filterAction} onChange={e=>setFilterAction(e.target.value)}>{actions.map(a=><option key={a}>{a}</option>)}</select>
+      </div>
+      <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:"var(--mu2)"}}>🔍 {auditLog.length} total entries · {filtered.length} shown</div>
+      {filtered.length===0?<div className="empty"><div className="ei">🔍</div><div>No audit entries yet</div></div>
+        :<div style={{display:"flex",flexDirection:"column",gap:1}}>
+          {filtered.map((a,i)=>(
+            <div key={a.id||i} style={{display:"flex",alignItems:"start",gap:12,padding:"10px 14px",background:"var(--s1)",borderBottom:"1px solid var(--rim)"}}>
+              <span className="bdg" style={{background:"rgba(0,0,0,.06)",color:actionColor[a.action]||"var(--mu)",fontSize:10,flexShrink:0,marginTop:2}}>{a.action}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:500}}>{a.detail}</div>
+                <div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{a.entity} · {a.entityId}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontSize:11,color:"var(--mu2)"}}>{a.userName}</div>
+                <div style={{fontSize:10,color:"var(--mu)",marginTop:2}}>{fmt(a.createdAt)}</div>
+              </div>
+            </div>
+          ))}
+        </div>}
+    </>
+  );
+}
+
+// ── BRANCHES ──────────────────────────────────────────────────
+function BranchesPage({branches,profile,users,clients,tickets,isCtrl,writeAudit}){
+  const [showForm,setShowForm]=useState(false);
+  const [f,setF]=useState({name:"",address:"",phone:"",email:"",managerId:"",region:""});
+  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
+
+  async function saveBranch(){
+    if(!f.name.trim()){alert("Branch name is required.");return;}
+    const id="BR"+uid().toUpperCase();
+    await FS.set("branches",id,{...f,id,createdBy:profile.id,createdAt:nowISO()});
+    await writeAudit("CREATE","branch",id,`Branch "${f.name}" created`);
+    setShowForm(false);setF({name:"",address:"",phone:"",email:"",managerId:"",region:""});
+  }
+
+  async function deleteBranch(b){
+    if(!confirm(`Delete branch "${b.name}"?`))return;
+    await FS.del("branches",b.id);
+    await writeAudit("DELETE","branch",b.id,`Branch "${b.name}" deleted`);
+  }
+
+  const mgrs=users.filter(u=>u.role==="manager"||u.role==="controller");
+
+  return(
+    <>
+      <div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:"var(--mu2)"}}>
+        🏢 Branches let you organise your business by location. Assign users and clients to branches for filtered reporting and access control.
+      </div>
+      <div className="sg" style={{marginBottom:12}}>
+        {[{n:branches.length,l:"Total Branches",c:"var(--blue)"},{n:users.filter(u=>u.branchId).length,l:"Assigned Users",c:"var(--grn)"},{n:clients.filter(c=>c.branchId).length,l:"Assigned Clients",c:"var(--acc)"},{n:tickets.filter(t=>t.branchId).length,l:"Tagged Tickets",c:"var(--amb)"}].map(s=><div className="sc" key={s.l}><div className="sc-n" style={{color:s.c}}>{s.n}</div><div className="sc-l">{s.l}</div></div>)}
+      </div>
+      {isCtrl&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><button className="btn bp bsm" onClick={()=>setShowForm(v=>!v)}>+ Add Branch</button></div>}
+      {showForm&&<div style={{background:"var(--s1)",border:"1px solid var(--rim)",borderRadius:11,padding:16,marginBottom:14,display:"flex",flexDirection:"column",gap:11}}>
+        <div style={{fontWeight:700,fontSize:14}}>New Branch</div>
+        <div className="fr2">
+          <Fld label="Branch Name *"><input className="inp" value={f.name} onChange={e=>sf("name",e.target.value)} placeholder="e.g. Cape Town Office"/></Fld>
+          <Fld label="Region"><input className="inp" value={f.region} onChange={e=>sf("region",e.target.value)} placeholder="e.g. Western Cape"/></Fld>
+        </div>
+        <Fld label="Address"><textarea className="ta" value={f.address} onChange={e=>sf("address",e.target.value)} style={{minHeight:50}}/></Fld>
+        <div className="fr2">
+          <Fld label="Phone"><input className="inp" value={f.phone} onChange={e=>sf("phone",e.target.value)}/></Fld>
+          <Fld label="Email"><input className="inp" type="email" value={f.email} onChange={e=>sf("email",e.target.value)}/></Fld>
+        </div>
+        <Fld label="Branch Manager"><select className="sel" value={f.managerId} onChange={e=>sf("managerId",e.target.value)}><option value="">— Select —</option>{mgrs.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></Fld>
+        <div style={{display:"flex",gap:8}}><button className="btn bp bsm" onClick={saveBranch}>Save Branch</button><button className="btn bg2 bsm" onClick={()=>setShowForm(false)}>Cancel</button></div>
+      </div>}
+      {branches.length===0?<div className="empty"><div className="ei">🏢</div><div>No branches yet</div><div style={{fontSize:12,color:"var(--mu)",marginTop:6}}>Add your first branch office or service location</div></div>
+        :<div className="cg">{branches.map(b=>{
+          const mgr=users.find(u=>u.id===b.managerId);
+          const branchUsers=users.filter(u=>u.branchId===b.id);
+          const branchClients=clients.filter(c=>c.branchId===b.id);
+          const branchTickets=tickets.filter(t=>t.branchId===b.id);
+          return(
+            <div key={b.id} className="card">
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8}}>
+                <div><div style={{fontWeight:700,fontSize:14}}>{b.name}</div><div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{b.region||"—"}</div></div>
+                <span className="bdg" style={{background:"rgba(0,194,255,.10)",color:"var(--acc)",fontSize:10}}>Branch</span>
+              </div>
+              {b.address&&<div className="crow" style={{alignItems:"flex-start"}}><span className="crl">Address</span><span className="crv" style={{fontSize:11,textAlign:"right",maxWidth:180,whiteSpace:"pre-line"}}>{b.address}</span></div>}
+              {b.phone&&<div className="crow"><span className="crl">Phone</span><span className="crv">{b.phone}</span></div>}
+              {b.email&&<div className="crow"><span className="crl">Email</span><span className="crv" style={{fontSize:11}}>{b.email}</span></div>}
+              <div className="crow"><span className="crl">Manager</span><span className="crv">{mgr?.name||"Unassigned"}</span></div>
+              <div className="crow"><span className="crl">Users</span><span className="crv">{branchUsers.length}</span></div>
+              <div className="crow"><span className="crl">Clients</span><span className="crv">{branchClients.length}</span></div>
+              <div className="crow"><span className="crl">Open Tickets</span><span className="crv" style={{color:branchTickets.filter(t=>!["Closed","Resolved"].includes(t.status)).length>0?"var(--amb)":"var(--grn)"}}>{branchTickets.filter(t=>!["Closed","Resolved"].includes(t.status)).length}</span></div>
+              {isCtrl&&<div className="cacts" style={{marginTop:8}}>
+                <button className="btn bd bxs" style={{marginLeft:"auto"}} onClick={()=>deleteBranch(b)}>Delete</button>
+              </div>}
+            </div>
+          );
+        })}</div>}
     </>
   );
 }
