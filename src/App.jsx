@@ -541,7 +541,7 @@ if (!profile) {
       { id: "devices", ic: "🖥️", label: "Devices" },
       { id: "parts", ic: "🔧", label: "Parts & Inventory" },
       { id: "advanced_inventory", ic: "📦", label: "Advanced Inventory" },
-      { id: "purchaseorders", ic: "📦", label: "Purchase Orders" }
+      { id: "purchase_orders", ic: "📦", label: "Purchase Orders" }
     ]
   },
 
