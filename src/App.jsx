@@ -11,6 +11,14 @@ import {
   sendPasswordResetEmail
 } from "firebase/auth";
 
+// ─── FEATURE COMPONENTS ───
+import { PredictiveMaintenancePage } from "./features/FEATURE_1_ML_PREDICTIVE_MAINTENANCE.jsx";
+import { AdvancedInventoryPage } from "./features/FEATURE_2_ADVANCED_INVENTORY.jsx";
+import { ComplianceAuditTrailPage } from "./features/FEATURE_3_COMPLIANCE_AUDIT.jsx";
+import { EmailIntegrationPage } from "./features/FEATURE_4_EMAIL_INTEGRATION.jsx";
+import { MobileTechnicianMonitorPage } from "./features/FEATURE_5_MOBILE_APP.jsx";
+import { DeviceIoTIntegrationPage } from "./features/FEATURE_6_DEVICE_IOT.jsx";
+
 // ─── CONSTANTS ────────────────────────────────────────────────
 const ROLES = { MANAGER:"manager", CONTROLLER:"controller", TECHNICIAN:"technician" };
 const TICKET_TYPES = ["IT","Copier","CCTV","PABX"];
@@ -350,11 +358,12 @@ function App() {
   const [branches,setBranches]   = useState([]);
   const [darkMode,setDarkMode]   = useState(()=>localStorage.getItem("is_dark")==="1");
 
-  // Apply theme changes
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
-    localStorage.setItem("is_dark", darkMode ? "1" : "0");
-  }, [darkMode]);
+  // ─── FEATURE STATES ───
+  const [deviceFailures, setDeviceFailures] = useState([]);
+  const [deviceConnections, setDeviceConnections] = useState([]);
+  const [deviceMetrics, setDeviceMetrics] = useState([]);
+  const [emailHistory, setEmailHistory] = useState([]);
+  const [emailSettings, setEmailSettings] = useState({});
 
   // Firebase Auth
 useEffect(() => {
@@ -406,6 +415,12 @@ useEffect(() => {
       FS.sub("audit_log",d => setAuditLog(d.sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")))),
       FS.sub("knowledge_base",d => setKnowledgeBase(d)),
       FS.sub("branches", d => setBranches(d)),
+      // ─── FEATURE SUBSCRIPTIONS ───
+      FS.sub("device_failures", d => setDeviceFailures(d)),
+      FS.sub("device_connections", d => setDeviceConnections(d)),
+      FS.sub("device_metrics", d => setDeviceMetrics(d)),
+      FS.sub("email_history", d => setEmailHistory(d)),
+      FS.sub("email_settings", d => setEmailSettings(Array.isArray(d) ? d[0] || {} : {})),
     ];
     FS.get("settings","main").then(s=>{ if(s) setSettings(s); });
     return ()=>subs.forEach(u=>u());
@@ -525,8 +540,8 @@ if (!profile) {
       { id: "clients", ic: "🏢", label: "Clients" },
       { id: "devices", ic: "🖥️", label: "Devices" },
       { id: "parts", ic: "🔧", label: "Parts & Inventory" },
-      { id: "yield", ic: "📊", label: "Consumable Yield" },
-      { id: "purchase_orders", ic: "📦", label: "Purchase Orders" }
+      { id: "advanced_inventory", ic: "📦", label: "Advanced Inventory" },
+      { id: "purchaseorders", ic: "📦", label: "Purchase Orders" }
     ]
   },
 
@@ -541,11 +556,20 @@ if (!profile) {
   },
 
   {
+    grp: "Intelligence",
+    items: [
+      { id: "predictive_maintenance", ic: "🔮", label: "ML Predictions" },
+      { id: "device_iot", ic: "🔌", label: "Device IoT" }
+    ]
+  },
+
+  {
     grp: "Team",
     items: [
       { id: "team", ic: "👷", label: "Team" },
       { id: "performance", ic: "🏆", label: "Performance" },
-      { id: "stats", ic: "📊", label: "Statistics" }
+      { id: "stats", ic: "📊", label: "Statistics" },
+      { id: "mobile_technicians", ic: "📱", label: "Mobile Techs" }
     ]
   },
 
@@ -553,6 +577,8 @@ if (!profile) {
     grp: "System",
     items: [
       { id: "settings", ic: "⚙️", label: "Settings" },
+      { id: "audit_trail", ic: "🔐", label: "Audit Trail" },
+      { id: "email_integration", ic: "📧", label: "Email Integration" },
       { id: "audit", ic: "🔍", label: "Audit Log" },
       { id: "knowledge", ic: "📚", label: "Knowledge Base" }
     ]
@@ -596,26 +622,18 @@ if (!profile) {
           <div className="topbar-r">
             {isCtrl&&page==="tickets"&&<button className="btn bp bsm" onClick={()=>setModal("new-ticket")}>+ Log Call</button>}
             <button title="Toggle theme" onClick={()=>setDarkMode(d=>!d)} style={{background:"var(--s2)",border:"1px solid var(--rim)",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:16,color:"var(--mu2)"}}>{darkMode?"☀️":"🌙"}</button>
-            <button 
-              title="Notifications" 
-              onClick={() => setNotif(p => !p)}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: "rgba(255,255,255,.08)",
-                border: "1px solid var(--rim)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                fontSize: 16,
-                color: "var(--mu2)",
-                transition: "all .12s"
-              }}
-            >
-              🔔
-            </button>
+            <div style={{
+  width: 36,
+  height: 36,
+  borderRadius: 10,
+  background: "rgba(255,255,255,.08)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer"
+}}>
+  🔔
+</div>
             <Av u={profile} sz={32}/>
           </div>
         </div>
@@ -643,6 +661,14 @@ if (!profile) {
           {isMgr&&page==="performance"&&<PerformancePage tickets={tickets} users={users} settings={settings}/>}
           {isMgr&&page==="stats"&&<StatsPage tickets={tickets} clients={clients} users={users} slaMeta={slaMeta}/>}
           {isMgr&&page==="settings"&&<SettingsPage settings={settings} saveSettings={saveSettings}/>}
+          
+          {/* ─── FEATURE PAGES ─── */}
+          {(isCtrl||isMgr)&&page==="predictive_maintenance"&&<PredictiveMaintenancePage devices={devices} tickets={tickets} deviceFailures={deviceFailures}/>}
+          {(isCtrl||isMgr)&&page==="advanced_inventory"&&<AdvancedInventoryPage parts={parts} tickets={tickets} warehouses={[{id:"WH001",name:"Main"},{id:"WH002",name:"Branch 1"},{id:"WH003",name:"Branch 2"}]}/>}
+          {(isCtrl||isMgr)&&page==="device_iot"&&<DeviceIoTIntegrationPage devices={devices} deviceConnections={deviceConnections} deviceMetrics={deviceMetrics}/>}
+          {(isCtrl||isMgr)&&page==="audit_trail"&&<ComplianceAuditTrailPage auditLog={auditLog} users={users}/>}
+          {(isCtrl||isMgr)&&page==="email_integration"&&<EmailIntegrationPage emailHistory={emailHistory} emailSettings={emailSettings}/>}
+          {isMgr&&page==="mobile_technicians"&&<MobileTechnicianMonitorPage sessions={[]} technicians={users?.filter(u=>u.role==="technician")||[]}/>}
         </div>
 
         {isTech&&<nav className="mobile-nav"><div className="mn-items">
